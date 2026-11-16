@@ -50,7 +50,7 @@ a{color:inherit}.w{max-width:1120px;margin:0 auto;padding:0 20px}
 nav{position:sticky;top:0;z-index:20;background:rgba(10,7,16,.75);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
 nav .w{display:flex;align-items:center;gap:22px;height:64px}
 .brand{display:flex;align-items:center;gap:9px;text-decoration:none;font:800 23px "Plus Jakarta Sans";letter-spacing:-.045em}
-nav .links{display:flex;gap:22px;margin-left:auto;font-size:14.5px;color:#C9C2D6}nav .links a{text-decoration:none}
+nav .links{display:flex;gap:22px;margin-left:auto;font-size:14.5px;color:#C9C2D6;white-space:nowrap}nav .links a{text-decoration:none}
 nav .btn{padding:9px 16px;font-size:14px}
 .hero{position:relative;padding:90px 0 60px;text-align:center;overflow:hidden}
 .hero:before{content:"";position:absolute;inset:0;z-index:-1;background:radial-gradient(ellipse 40% 45% at 22% 100%,rgba(255,138,61,.75),transparent 70%),radial-gradient(ellipse 50% 50% at 70% 100%,rgba(255,61,139,.7),transparent 70%),radial-gradient(ellipse 40% 50% at 100% 30%,rgba(139,92,255,.5),transparent 70%)}
@@ -85,7 +85,7 @@ section{padding:80px 0}
 .final h2{font-size:clamp(30px,4.5vw,50px)}
 footer{border-top:1px solid var(--line);padding:30px 0;color:var(--mu2);font-size:13.5px}footer .w{display:flex;gap:16px;flex-wrap:wrap;align-items:center}footer a{text-decoration:none}
 .seo{color:var(--mu);font-size:15px;max-width:860px;margin:0 auto}.seo h3{color:var(--tx);font:800 19px "Plus Jakarta Sans";margin:22px 0 6px}
-@media (max-width:860px){nav .links{display:none}.steps,.split{grid-template-columns:1fr}.hero{padding-top:60px}section{padding:56px 0}}
+@media (max-width:1000px){nav .links{display:none}nav .btn:first-of-type{margin-left:auto}}@media (max-width:860px){.steps,.split{grid-template-columns:1fr}.hero{padding-top:60px}section{padding:56px 0}}
 </style>
 </head>
 <body>
