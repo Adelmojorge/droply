@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /app
 Disallow: /checkout
-Sitemap: https://droply-ai.vercel.app/sitemap.xml
+Sitemap: https://droply.codedropstudio.online/sitemap.xml

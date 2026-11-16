@@ -11,12 +11,70 @@ const today0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.ge
 const fmtDate = d => new Date(d).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
 const fmtDT = d => new Date(d).toLocaleString('pt-PT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 const phoneDigits = p => String(p || '').replace(/[^\d]/g, '');
-const money = (v, c) => { const n = Number(v) || 0; c ||= DB?.profile?.currency; if (!c) return n.toLocaleString('pt-PT'); try { return n.toLocaleString('pt-PT', { style: 'currency', currency: c, maximumFractionDigits: n % 1 ? 2 : 0 }); } catch { return n.toLocaleString('pt-PT') + ' ' + c; } };
+const money = (v, c) => { const n = Number(v) || 0; c ||= DB?.profile?.currency; if (!c) return n.toLocaleString('pt-PT'); if (c === 'AOA' || c === 'MZN') return n.toLocaleString('pt-BR', { maximumFractionDigits: Math.abs(n) >= 100 ? 0 : 2 }) + (c === 'AOA' ? ' Kz' : ' MT'); try { return n.toLocaleString('pt-PT', { style: 'currency', currency: c, maximumFractionDigits: n % 1 ? 2 : 0 }); } catch { return n.toLocaleString('pt-PT') + ' ' + c; } };
 const CURRENCIES = ['AOA', 'MZN', 'USD', 'EUR', 'BRL', 'GBP', 'CVE', 'ZAR', 'CAD', 'CHF', 'XOF', 'XAF', 'NGN', 'KES'];
 const CUR_NAMES = { AOA: 'Kwanza (Angola)', MZN: 'Metical (Moçambique)', USD: 'Dólar americano', EUR: 'Euro', BRL: 'Real (Brasil)', GBP: 'Libra esterlina', CVE: 'Escudo (Cabo Verde)', ZAR: 'Rand (África do Sul)', CAD: 'Dólar canadiano', CHF: 'Franco suíço', XOF: 'Franco CFA (Oeste)', XAF: 'Franco CFA (Central)', NGN: 'Naira (Nigéria)', KES: 'Xelim (Quénia)' };
 const kz = v => String(Math.round(Number(v || 0))).replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' Kz';
 const isPro = () => ME?.plan === 'pro' || ME?.admin;
 const slug = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'site';
+
+/* ---------------- ícones (traço fino, estilo Lovable) ---------------- */
+const IC = {
+  pen: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a1 1 0 0 1 3 3l-9 9a2 2 0 0 1-.9.5l-2.9.8a.5.5 0 0 1-.6-.6l.8-2.9a2 2 0 0 1 .5-.9z"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  dash: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  clap: '<path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+  wallet: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+  phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>',
+  mobile: '<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
+  monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  settings: '<path d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.3a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.5a2 2 0 0 1-1 1.7l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.3a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.3a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.7v-.5a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.3a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  down: '<path d="m6 9 6 6 6-6"/>', right: '<path d="m9 18 6-6-6-6"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>', up: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>', arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  home: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .7-1.5l7-6a2 2 0 0 1 2.6 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  coins: '<circle cx="8" cy="8" r="6"/><path d="M18.1 10.4A6 6 0 1 1 10.3 18"/><path d="M7 6h1v4"/><path d="m16.7 13.9.7.7-2.8 2.8"/>',
+  zap: '<path d="M4 14a1 1 0 0 1-.8-1.6l9.9-10.2a.5.5 0 0 1 .9.5l-1.9 6A1 1 0 0 0 13 10h7a1 1 0 0 1 .8 1.6l-9.9 10.2a.5.5 0 0 1-.9-.5l1.9-6A1 1 0 0 0 11 14z"/>',
+  key: '<path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/>',
+  menu: '<path d="M4 12h16M4 6h16M4 18h16"/>', x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', check: '<path d="M20 6 9 17l-5-5"/>',
+  msg: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>', mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-9 5.7a2 2 0 0 1-2 0L2 7"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  note: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8M16 17H8"/>',
+  flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.4-.5-2-1-3-1.1-2.1-.2-4 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.2.4-2.3 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/>',
+  snow: '<path d="M2 12h20M12 2v20M4.9 4.9l14.2 14.2M19.1 4.9 4.9 19.1"/>',
+  sparkle: '<path d="M9.9 15.5a2 2 0 0 0-1.4-1.4l-6.1-1.6a.5.5 0 0 1 0-1l6.1-1.6a2 2 0 0 0 1.4-1.4l1.6-6.1a.5.5 0 0 1 1 0l1.6 6.1a2 2 0 0 0 1.4 1.4l6.1 1.6a.5.5 0 0 1 0 1l-6.1 1.6a2 2 0 0 0-1.4 1.4l-1.6 6.1a.5.5 0 0 1-1 0z"/>',
+  camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/>',
+  ban: '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
+  palette: '<circle cx="12" cy="12" r="10"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7" r="1"/><circle cx="16" cy="10" r="1"/>',
+  music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/>',
+  gem: '<path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6M2 9h20"/>',
+  mega: '<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
+  repeat: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  film: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18M3 7.5h4M3 12h18M3 16.5h4M17 3v18M17 7.5h4M17 16.5h4"/>',
+  trend: '<path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/>',
+};
+const ic = (n, s = 18) => `<svg class="i" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n] || ''}</svg>`;
+// troca emojis antigos por ícones de traço fino em toda a interface
+const EMO = { '💬': 'msg', '✉️': 'mail', '✉': 'mail', '📞': 'phone', '⏰': 'clock', '📝': 'note', '🔥': 'flame', '🌤': 'sun', '❄️': 'snow', '❄': 'snow', '🎬': 'clap', '🎞️': 'film', '🧑‍🎤': 'user', '🧬': 'user', '📸': 'camera', '🚫': 'ban', '🎨': 'palette', '🎵': 'music', '🎙': 'mic', '💎': 'gem', '📣': 'mega', '🔑': 'key', '☎': 'phone', '✦': 'sparkle', '▣': 'globe', '◎': 'users', '◧': 'dash', '➜': 'arrow', '↻': 'repeat', '🌐': 'globe', '🌍': 'globe', '🖥': 'monitor', '📱': 'mobile', '⚙': 'settings', '☰': 'menu', '✕': 'x', '🎉': '', '👋': '' };
+const EMO_RE = new RegExp('(' + Object.keys(EMO).sort((a, b) => b.length - a.length).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')|[\u{1F1E6}-\u{1F1FF}]{2}\\s?', 'gu');
+function iconify(root) {
+  if (!root) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: n => (!n.parentElement || n.parentElement.closest('textarea,option,script,style,.msg,.noic,input') ? NodeFilter.FILTER_REJECT : (EMO_RE.lastIndex = 0, EMO_RE.test(n.nodeValue)) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
+  const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
+  for (const n of nodes) {
+    const span = document.createElement('span'); span.className = 'icw';
+    span.innerHTML = esc(n.nodeValue).replace(EMO_RE, (m, k) => k ? (EMO[k] ? ic(EMO[k], 16) : '') : '');
+    n.replaceWith(...span.childNodes);
+  }
+}
+new MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1) iconify(n); else if (n.nodeType === 3 && n.parentElement) iconify(n.parentElement); }).observe(document.documentElement, { childList: true, subtree: true });
 
 /* ---------------- funis e sequências pré-feitos ---------------- */
 const FUNNELS = {
@@ -47,7 +105,7 @@ const SEQS = [
   ] },
 ];
 const CH = { wa: ['WhatsApp', '💬'], email: ['E-mail', '✉️'], call: ['Ligação', '📞'] };
-const TEMPS = [['quente', '🔥 Quente', 'var(--warm)'], ['morno', '🌤 Morno', '#FF8FBB'], ['frio', '❄️ Frio', '#8FB3FF']];
+const TEMPS = [['quente', 'Quente', 'var(--warm)'], ['morno', 'Morno', '#FF8FBB'], ['frio', 'Frio', '#8FB3FF']];
 const SUGG = ['Dentistas em Austin, Texas, sem site', 'Restaurantes em Lisboa com menos de 80 avaliações', 'Canalizadores em Braga sem site', 'Advogados em Miami', 'Ginásios em São Paulo', 'Supermercados em Houston'];
 
 let CFG = {}, ME = null, TOKEN = null, DB = null, SEARCH = null, BUSY = {};
@@ -80,9 +138,9 @@ function toast(m, err = false) { const t = $('#toast'); t.textContent = m; t.cla
 function modal(html, cls = 'drawer') { const m = $('#modal'); m.innerHTML = `<div class="${cls}">${html}</div>`; m.hidden = false; m.className = 'modal' + (cls === 'dialog' ? ' center' : ''); m.onclick = e => { if (e.target === m) closeModal(); }; return m; }
 function closeModal() { $('#modal').hidden = true; $('#modal').innerHTML = ''; if (location.hash.startsWith('#/lead/')) history.replaceState(null, '', '#/crm'); }
 async function copy(text) { try { await navigator.clipboard.writeText(text); toast('Copiado ✓'); } catch { toast('Não consegui copiar. Seleciona e copia à mão.', true); } }
-const mobBtn = () => `<button class="btn sm mob" onclick="document.getElementById('side').classList.toggle('open')">☰</button>`;
+const mobBtn = () => `<button class="ib mob" aria-label="Menu" onclick="document.getElementById('side').classList.toggle('open')">${ic('menu')}</button>`;
 const head = (t, extra = '', sub = '') => `<div class="top">${mobBtn()}<div><h1 class="h">${t}</h1>${sub ? `<p class="mu" style="font-size:13.5px">${sub}</p>` : ''}</div><span class="sp"></span>${extra}</div>`;
-const tempTag = t => { const x = TEMPS.find(a => a[0] === t); return x ? `<span class="tag" style="color:${x[2]};border-color:${x[2]}55">${x[1].toUpperCase()}</span>` : ''; };
+const tempTag = t => { const x = TEMPS.find(a => a[0] === t); return x ? `<span class="tag"><i class="dt" style="background:${x[2]}"></i>${x[1]}</span>` : ''; };
 function download(name, content, type) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([content], { type })); a.download = name; a.click(); }
 
 /* ---------------- API e sessão ---------------- */
@@ -153,34 +211,106 @@ function dueSteps() {
   return out.sort((a, b) => a.at - b.at);
 }
 function shell() {
-  const n = Object.keys(DB.leads).length, s = Object.keys(DB.sites).length, due = dueSteps().length;
-  const pic = ME.picture ? `<img src="${esc(ME.picture)}" alt="" referrerpolicy="no-referrer">` : `<div class="av">${esc((ME.name || ME.email)[0].toUpperCase())}</div>`;
+  const n = Object.keys(DB.leads).length, due = dueSteps().length;
+  const first = (ME.name || ME.email).split(' ')[0];
+  const av = ME.picture ? `<img src="${esc(ME.picture)}" alt="" referrerpolicy="no-referrer">` : `<span>${esc(first[0].toUpperCase())}</span>`;
   $('#root').innerHTML = `<div class="app">
   <aside class="side" id="side">
-   <a class="brand" href="#/">${logo(26)}<b>droply</b></a>
-   <a class="acct" href="#/definicoes">${pic}<div><b>${esc(ME.name || ME.email)}</b><small>${ME.admin ? 'Admin · ilimitado' : 'Plano ' + esc(ME.planInfo?.name || '')}${ME.until ? ' · até ' + fmtDate(ME.until) : ''}</small></div><span class="gear">⚙</span></a>
+   <div class="sbtop"><a class="logo" href="#/" aria-label="droply">${logo(22)}</a><button class="ib mob" aria-label="Fechar" onclick="document.getElementById('side').classList.remove('open')">${ic('x')}</button></div>
+   <button class="ws" id="wsBtn"><span class="wsav">${esc(first[0].toUpperCase())}</span><b>${esc(first)}'s droply</b>${ic('down', 16)}</button>
    <nav class="nav">
-    <a href="#/" data-r="home">✦ Encontrar clientes</a>
-    <a href="#/dashboard" data-r="dashboard">◧ Dashboard</a>
-    <a href="#/crm" data-r="clientes">◎ Clientes ${due ? `<span class="cnt hot">${due}</span>` : `<span class="cnt">${n}</span>`}</a>
-    <a href="#/sites" data-r="sites">▣ Sites <span class="cnt">${s}</span></a>
-    <a href="#/estudio" data-r="estudio">🎬 Estúdio IA ${isPro() ? '' : '<span class="cnt pro">PRO</span>'}</a>
-    <a href="#/vendas" data-r="vendas">€ Vendas</a>
+    <a href="#/" data-r="home">${ic('pen')}<span>Encontrar clientes</span></a>
+    <a href="javascript:void 0" id="palBtn">${ic('search')}<span>Pesquisar</span><kbd>Ctrl K</kbd></a>
+    <a href="#/dashboard" data-r="dashboard">${ic('dash')}<span>Dashboard</span></a>
+    <a href="#/crm" data-r="clientes">${ic('users')}<span>Clientes</span>${due ? `<em class="cnt hot">${due}</em>` : n ? `<em class="cnt">${n}</em>` : ''}</a>
+    <a href="#/sites" data-r="sites">${ic('globe')}<span>Sites</span></a>
+    <a href="#/estudio" data-r="estudio">${ic('clap')}<span>Estúdio IA</span>${isPro() ? '' : '<em class="cnt pro">PRO</em>'}</a>
+    <a href="#/vendas" data-r="vendas">${ic('wallet')}<span>Vendas</span></a>
    </nav>
-   <h6>Pesquisas recentes</h6>
-   <div class="saved">${DB.searches.slice(0, 6).map(x => `<a data-sid="${x.id}"><i>${esc(x.label[0] || '?')}</i><span>${esc(x.label)}</span></a>`).join('') || '<span class="mu2" style="font-size:12.5px;padding:0 10px">Ainda nenhuma.</span>'}</div>
-   <a class="num" href="#/numeros"><div><b>${isPro() ? 'O teu número grátis' : 'Número internacional'}</b><small>${isPro() ? 'Pede já o teu número de qualquer país' : 'Incluído no plano Pro'}</small></div><i>☎</i></a>
-   <div class="quota" id="quota"></div>
+   <div class="shd">Pesquisas recentes</div>
+   <div class="saved">${DB.searches.slice(0, 8).map(x => `<a data-sid="${x.id}"><i style="color:${colorOf(x.label)}">${esc((x.label[0] || '?').toUpperCase())}</i><span>${esc(x.label)}</span></a>`).join('') || '<p class="sempty">As tuas pesquisas aparecem aqui.</p>'}
+    ${DB.searches.length ? '<a href="#/pesquisas" class="vall">Ver tudo</a>' : ''}</div>
+   <div class="sfoot">
+    <a class="promo" href="#/numeros"><div><b>${isPro() ? 'O teu número grátis' : 'Número internacional'}</b><small>${isPro() ? 'Pede o teu número de qualquer país' : 'Grátis no plano Pro'}</small></div><span class="art">${ic('phone', 20)}</span></a>
+    <button class="me" id="meBtn" aria-label="Conta">${av}</button>
+   </div>
   </aside>
   <main class="main"><div class="scroll" id="view"></div></main></div>`;
   $$('.saved a[data-sid]').forEach(a => a.onclick = () => openSearch(a.dataset.sid));
-  renderQuota();
+  $('#wsBtn').onclick = e => wsMenu(e.currentTarget);
+  $('#meBtn').onclick = e => meMenu(e.currentTarget);
+  $('#palBtn').onclick = palette;
 }
-function renderQuota() {
-  const q = $('#quota'); if (!q || !ME?.usage) return;
-  const row = (k, t) => { const u = ME.usage[k]; if (!u) return ''; const pct = Math.min(100, u.used / Math.max(1, u.limit) * 100); return `<div class="r"><span>${t}</span><span>${u.used}/${u.limit}</span></div><div class="bar"><i style="width:${pct}%"></i></div>`; };
-  q.innerHTML = `<b style="font-size:12.5px">Este mês${ME.admin ? ' · admin' : ''}</b>${row('search', 'Pesquisas')}${row('analyze', 'Análises')}${row('site', 'Sites')}${isPro() ? row('studio', 'Estúdio IA') : ''}${!isPro() ? '<a class="btn sm pri" href="#/planos" style="width:100%;margin-top:10px">Passar para o Pro</a>' : ''}${ME.admin ? '<a class="mu2" href="#/admin" style="display:block;margin-top:8px;font-size:12px">🔑 Gerir assinaturas</a>' : ''}${ME.limitsActive === false && ME.admin ? '<div class="mu2" style="margin-top:6px">Limites desligados (falta KV)</div>' : ''}`;
+/* popovers (como os menus da Lovable) */
+function pop(anchor, html, place = 'below') {
+  closePop();
+  const r = anchor.getBoundingClientRect(), d = document.createElement('div');
+  d.className = 'pop'; d.id = 'pop'; d.innerHTML = html; document.body.appendChild(d);
+  const w = d.offsetWidth, h = d.offsetHeight;
+  let x = r.left, y = place === 'above' ? r.top - h - 8 : r.bottom + 6;
+  x = Math.max(8, Math.min(x, innerWidth - w - 8)); y = Math.max(8, Math.min(y, innerHeight - h - 8));
+  d.style.left = x + 'px'; d.style.top = y + 'px';
+  setTimeout(() => document.addEventListener('mousedown', outPop), 0);
+  d.addEventListener('click', e => { if (e.target.closest('a,[data-close]')) closePop(); });
+  return d;
 }
+function outPop(e) { if (!e.target.closest('#pop')) closePop(); }
+function closePop() { $('#pop')?.remove(); document.removeEventListener('mousedown', outPop); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePop(); if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && ME?.allowed) { e.preventDefault(); palette(); } });
+function usageRows() {
+  if (!ME?.usage) return '';
+  const row = (k, t) => { const u = ME.usage[k]; if (!u || (!u.limit && k === 'studio')) return ''; const pct = Math.min(100, u.used / Math.max(1, u.limit) * 100); return `<div class="ur"><span>${t}</span><span>${ME.admin ? u.used + ' · ilimitado' : u.used + ' / ' + u.limit}</span></div><div class="bar"><i style="width:${ME.admin ? 3 : pct}%"></i></div>`; };
+  return row('search', 'Pesquisas') + row('analyze', 'Análises com IA') + row('site', 'Sites') + row('studio', 'Estúdio IA');
+}
+function wsMenu(a) {
+  const first = (ME.name || ME.email).split(' ')[0];
+  pop(a, `<div class="phd"><span class="wsav lg">${esc(first[0].toUpperCase())}</span><div><b>${esc(first)}'s droply</b><small>${ME.admin ? 'Administrador · sem limites' : 'Plano ' + esc(ME.planInfo?.name || '') + (ME.until ? ' · renova a ' + fmtDate(ME.until) : '')}</small></div></div>
+  <div class="pcard"><div class="ur" style="margin:0 0 6px"><b>Uso este mês</b><a href="#/planos" class="plink">${isPro() ? 'Planos' : 'Passar para o Pro'}</a></div>${usageRows()}<small class="mu2">Os limites renovam no dia 1 de cada mês.</small></div>
+  <a href="#/definicoes" class="pi">${ic('settings')}Definições</a>
+  ${ME.admin ? `<a href="#/admin" class="pi">${ic('key')}Gerir assinaturas</a>` : ''}
+  ${!isPro() ? `<a href="#/planos" class="pi grad">${ic('zap')}Passar para o Pro</a>` : ''}`).classList.add('wide');
+}
+function meMenu(a) {
+  const wa = CFG.supportWhatsApp ? `https://wa.me/${CFG.supportWhatsApp}?text=${encodeURIComponent('Olá! Preciso de ajuda com o droply. Conta: ' + ME.email)}` : '';
+  const d = pop(a, `<div class="phd">${ME.picture ? `<img src="${esc(ME.picture)}" alt="" referrerpolicy="no-referrer">` : ''}<div><b>${esc(ME.name || '')}</b><small>${esc(ME.email)}</small></div></div>
+  <a href="#/definicoes" class="pi">${ic('user')}Perfil e tom de voz</a>
+  <a href="javascript:void 0" class="pi" id="pCur">${ic('coins')}Moeda<span class="pv">${esc(DB.profile.currency || '—')}</span></a>
+  <a href="#/planos" class="pi">${ic('zap')}Planos<span class="pv">${ME.admin ? 'Admin' : esc(ME.planInfo?.name || '')}</span></a>
+  <div class="psep"></div>
+  ${wa ? `<a href="${wa}" target="_blank" rel="noopener" class="pi">${ic('help')}Suporte</a>` : ''}
+  <a href="/" class="pi">${ic('home')}Página inicial</a>
+  <div class="psep"></div>
+  <a href="javascript:void 0" class="pi" id="pOut">${ic('logout')}Sair</a>`, 'above');
+  $('#pCur', d).onclick = () => askCurrency(true);
+  $('#pOut', d).onclick = () => logout();
+}
+/* pesquisa rápida (Ctrl+K) */
+function palette() {
+  const m = modal(`<div class="pal"><div class="palin">${ic('search')}<input id="palQ" placeholder="Procurar clientes, sites, pesquisas..." autocomplete="off"><kbd>Esc</kbd></div><div id="palR" class="palr"></div></div>`, 'dialog');
+  m.querySelector('.dialog').classList.add('paldlg');
+  const items = [
+    ...[['#/', 'pen', 'Encontrar clientes'], ['#/dashboard', 'dash', 'Dashboard'], ['#/crm', 'users', 'Clientes'], ['#/pipeline', 'users', 'Funil'], ['#/followups', 'repeat', 'Follow-ups'], ['#/sites', 'globe', 'Sites'], ['#/estudio', 'clap', 'Estúdio IA'], ['#/vendas', 'wallet', 'Vendas'], ['#/definicoes', 'settings', 'Definições']].map(([h, i, t]) => ({ h, i, t, g: 'Ir para' })),
+    ...Object.values(DB.leads).map(l => ({ h: '#/lead/' + l.id, i: 'user', t: l.name, s: (l.address || '').split(',').slice(-2).join(',').trim(), g: 'Clientes' })),
+    ...Object.values(DB.sites).map(x => ({ h: '#/site/' + x.id, i: 'globe', t: x.name || 'Site', g: 'Sites' })),
+    ...DB.searches.map(x => ({ sid: x.id, i: 'folder', t: x.label, s: x.leadIds.length + ' empresas', g: 'Pesquisas' })),
+  ];
+  const draw = () => {
+    const q = $('#palQ').value.trim().toLowerCase();
+    const list = items.filter(x => !q || (x.t + ' ' + (x.s || '')).toLowerCase().includes(q)).slice(0, 40);
+    let g = ''; $('#palR').innerHTML = list.map((x, i) => `${x.g !== g ? `<div class="palg">${(g = x.g)}</div>` : ''}<a class="palit${i ? '' : ' on'}" ${x.sid ? `data-sid="${x.sid}" href="javascript:void 0"` : `href="${x.h}"`}>${ic(x.i)}<span>${esc(x.t)}</span>${x.s ? `<small>${esc(x.s)}</small>` : ''}</a>`).join('') || '<p class="mu" style="padding:18px">Sem resultados.</p>';
+    $$('#palR [data-sid]').forEach(a => a.onclick = () => { closeModal(); openSearch(a.dataset.sid); });
+    $$('#palR a[href^="#"]').forEach(a => a.addEventListener('click', () => closeModal()));
+  };
+  $('#palQ').oninput = draw;
+  $('#palQ').onkeydown = e => {
+    const all = $$('#palR .palit'), i = all.findIndex(x => x.classList.contains('on'));
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const j = Math.max(0, Math.min(all.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1))); all.forEach((x, k) => x.classList.toggle('on', k === j)); all[j]?.scrollIntoView({ block: 'nearest' }); }
+    if (e.key === 'Enter') { e.preventDefault(); all[Math.max(0, i)]?.click(); }
+    if (e.key === 'Escape') closeModal();
+  };
+  draw(); setTimeout(() => $('#palQ').focus(), 30);
+}
+function renderQuota() {}
 
 /* ---------------- router ---------------- */
 function route() {
@@ -195,7 +325,7 @@ function route() {
   $('#side')?.classList.remove('open');
   $('#view').scrollTop = 0;
   const q = new URLSearchParams(qs || '');
-  const V = { home: viewSearch, dashboard: viewHome, planos: viewPlans, procurar: viewSearch, crm: viewCRM, leads: viewCRM, pipeline: viewPipeline, followups: viewFollowups, sites: () => viewSites(q), estudio: () => viewStudio(parts[1]), vendas: () => viewSales(parts[1]), numeros: viewNumbers, definicoes: viewSettings };
+  const V = { home: viewSearch, pesquisas: viewSearches, dashboard: viewHome, planos: viewPlans, procurar: viewSearch, crm: viewCRM, leads: viewCRM, pipeline: viewPipeline, followups: viewFollowups, sites: () => viewSites(q), estudio: () => viewStudio(parts[1]), vendas: () => viewSales(parts[1]), numeros: viewNumbers, definicoes: viewSettings };
   if (['crm', 'leads', 'pipeline', 'followups'].includes(r)) { V[r](); return clientTabs(r === 'leads' ? 'crm' : r); }
   if (r === 'lead') { viewCRM(); clientTabs('crm'); return openLead(parts[1]); }
   if (r === 'site') return viewSite(parts[1]);
@@ -219,29 +349,50 @@ function askCurrency(force = false) {
 }
 
 /* ================= PAINEL ================= */
-function salesStats() {
-  const cur = DB.profile.currency, m0 = new Date(); m0.setDate(1); m0.setHours(0, 0, 0, 0);
-  const inCur = DB.sales.filter(s => (s.currency || cur) === cur);
-  const sum = arr => arr.reduce((a, s) => a + (Number(s.value) || 0), 0);
-  const paid = inCur.filter(s => s.status === 'pago'), pend = inCur.filter(s => s.status === 'pendente'), canc = inCur.filter(s => s.status === 'cancelado' || s.status === 'reembolsado');
-  const leads = Object.values(DB.leads), open = leads.filter(l => !isWon(l) && !isLost(l) && (l.currency || cur) === cur);
+/* câmbios do dia (open.er-api.com, grátis, inclui AOA e MZN) */
+let RATES = null;
+async function loadRates() {
+  try { const c = JSON.parse(localStorage.getItem('droply:rates') || 'null'); if (c && Date.now() - c.at < 6 * 36e5) { RATES = c; return RATES; } } catch {}
+  try { const j = await (await fetch('https://open.er-api.com/v6/latest/USD')).json(); if (j.rates) { RATES = { at: Date.now(), day: j.time_last_update_utc, rates: j.rates }; try { localStorage.setItem('droply:rates', JSON.stringify(RATES)); } catch {} } } catch {}
+  return RATES;
+}
+function conv(v, from, to) {
+  v = Number(v) || 0; if (!from || from === to) return v;
+  const r = RATES?.rates; if (!r || !r[from] || !r[to]) return null;
+  return v / r[from] * r[to];
+}
+function salesStats(view) {
+  const base = DB.profile.currency, cur = view || DB.profile.viewCur || base, m0 = new Date(); m0.setDate(1); m0.setHours(0, 0, 0, 0);
+  const miss = {};
+  const val = (v, c) => { const x = conv(v, c || base, cur); if (x == null) { miss[c] = (miss[c] || 0) + (Number(v) || 0); return 0; } return x; };
+  const sum = arr => arr.reduce((a, s) => a + val(s.value, s.currency), 0);
+  const paid = DB.sales.filter(s => s.status === 'pago'), pend = DB.sales.filter(s => s.status === 'pendente'), canc = DB.sales.filter(s => s.status === 'cancelado' || s.status === 'reembolsado');
+  const leads = Object.values(DB.leads), open = leads.filter(l => !isWon(l) && !isLost(l));
   const contacted = leads.filter(l => l.status !== 'novo').length, won = leads.filter(isWon).length;
   const months = [...Array(6)].map((_, i) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 5 + i); d.setHours(0, 0, 0, 0); const e = new Date(d); e.setMonth(e.getMonth() + 1); return { label: d.toLocaleDateString('pt-PT', { month: 'short' }), v: sum(paid.filter(s => s.at >= d.getTime() && s.at < e.getTime())) }; });
-  const other = DB.sales.filter(s => s.status === 'pago' && (s.currency || cur) !== cur).reduce((a, s) => (a[s.currency] = (a[s.currency] || 0) + Number(s.value || 0), a), {});
-  return { cur, total: sum(paid), month: sum(paid.filter(s => s.at >= m0.getTime())), pend: sum(pend), pendN: pend.length, canc: sum(canc), cancN: canc.length, opp: open.reduce((a, l) => a + (Number(l.value) || 0), 0), oppN: open.length, conv: contacted ? Math.round(won / contacted * 100) : 0, won, months, other };
+  const total = sum(paid);
+  const byCur = paid.reduce((a, s) => (a[s.currency || base] = (a[s.currency || base] || 0) + (Number(s.value) || 0), a), {});
+  return { cur, base, total, month: sum(paid.filter(s => s.at >= m0.getTime())), pend: sum(pend), pendN: pend.length, canc: sum(canc), cancN: canc.length, opp: open.reduce((a, l) => a + val(l.value, l.currency), 0), oppN: open.length, conv: contacted ? Math.round(won / contacted * 100) : 0, won, months, byCur, miss, other: {} };
 }
 function chart(months, cur) {
   const max = Math.max(1, ...months.map(m => m.v));
   return `<div class="chart">${months.map(m => `<div><span class="v">${m.v ? money(m.v, cur) : ''}</span><i style="height:${Math.max(3, m.v / max * 100)}%"></i><span>${m.label}</span></div>`).join('')}</div>`;
 }
 function viewHome() {
+  if (!RATES) loadRates().then(() => { if (location.hash.startsWith('#/dashboard')) viewHome(); });
   const st = salesStats(), due = dueSteps(), first = (ME.name || '').split(' ')[0];
+  const EXTRA = ['AOA', 'USD', 'EUR', 'BRL', 'MZN', 'GBP'].filter(c => c !== st.cur).slice(0, 4);
   const hot = Object.values(DB.leads).filter(l => l.temp === 'quente' && !isWon(l) && !isLost(l)).slice(0, 6);
   const acts = Object.values(DB.leads).flatMap(l => (l.activities || []).map(a => ({ ...a, l }))).sort((a, b) => b.at - a.at).slice(0, 8);
   const calls = Object.values(DB.leads).reduce((a, l) => a + (l.activities || []).filter(x => x.t === 'call').length, 0);
-  $('#view').innerHTML = `<div class="page">${head('Dashboard', '<a class="btn pri" href="#/">Encontrar clientes ✦</a>', `Olá${first ? ', ' + esc(first) : ''}. Os números do teu negócio${st.cur ? ' em ' + st.cur : ''}.`)}
+  $('#view').innerHTML = `<div class="page">${head('Dashboard', `<label class="curpick">${ic('coins', 16)}<span>Ver em</span><select id="vCur">${CURRENCIES.map(c => `<option value="${c}" ${c === st.cur ? 'selected' : ''}>${c}</option>`).join('')}</select>${ic('down', 14)}</label><a class="btn pri" href="#/">Encontrar clientes</a>`, `Olá${first ? ', ' + esc(first) : ''}. Tudo o que faturaste, convertido para a moeda que escolheres.`)}
+  <div class="fx card">
+   <div class="fxm"><small>Total faturado</small><b class="gt">${money(st.total, st.cur)}</b><span>${CUR_NAMES[st.cur] || st.cur}${Object.keys(st.byCur).length > 1 || (Object.keys(st.byCur)[0] && Object.keys(st.byCur)[0] !== st.cur) ? ' · convertido de ' + Object.keys(st.byCur).join(', ') : ''}</span></div>
+   <div class="fxo">${EXTRA.map(c => { const v = conv(st.total, st.cur, c); return `<button data-vc="${c}"><small>${c}</small><b>${v == null ? '—' : money(v, c)}</b></button>`; }).join('')}</div>
+   <p class="fxn">${RATES ? `Câmbio de mercado do dia (${new Date(RATES.at).toLocaleDateString('pt-PT')}). Valores aproximados — o banco pode aplicar outra taxa.` : 'A carregar o câmbio do dia...'}${Object.keys(st.miss).length ? ' Sem câmbio para: ' + Object.keys(st.miss).join(', ') + '.' : ''}</p>
+  </div>
   <div class="kpis">
-   <div class="kpi"><small>Receita total</small><b>${money(st.total, st.cur)}</b><span>${Object.entries(st.other).map(([c, v]) => '+ ' + money(v, c)).join(' ') || 'vendas pagas'}</span></div>
+   <div class="kpi"><small>Receita total</small><b>${money(st.total, st.cur)}</b><span>${Object.entries(st.byCur).map(([c, v]) => money(v, c)).join(' + ') || 'vendas pagas'}</span></div>
    <div class="kpi"><small>Este mês</small><b class="gt">${money(st.month, st.cur)}</b><span>${new Date().toLocaleDateString('pt-PT', { month: 'long' })}</span></div>
    <div class="kpi"><small>Oportunidades abertas</small><b>${money(st.opp, st.cur)}</b><span>${st.oppN} leads em curso</span></div>
    <div class="kpi"><small>Taxa de conversão</small><b>${st.conv}%</b><span>${st.won} fechados</span></div>
@@ -260,39 +411,66 @@ function viewHome() {
     ${acts.map(a => `<a class="li" href="#/lead/${a.l.id}"><span>${({ call: '📞', wa: '💬', email: '✉️', note: '📝', stage: '➜', seq: '↻', sale: '€' })[a.t] || '•'}</span><div><b>${esc(a.l.name)}</b><small>${esc(a.text)} · ${fmtDT(a.at)}</small></div></a>`).join('') || '<p class="mu" style="padding:10px 0">Ainda sem atividade.</p>'}</div>
   </div>
   <div class="quick">${[['#/', '✦', 'Encontrar clientes', 'Google Maps + IA'], ['#/sites?novo=1', '▣', 'Criar um site', 'Qualquer site, com IA'], ['#/estudio/influencer', '🎬', 'Criar influencer IA', 'Perfil, prompts, roteiros'], ['#/vendas/checkout', '€', 'Criar checkout', 'Link de pagamento']].map(([h, i, t, s]) => `<a class="card qa" href="${h}"><i>${i}</i><b>${t}</b><small>${s}</small></a>`).join('')}</div></div>`;
+  const setV = c => { DB.profile.viewCur = c; save(); viewHome(); };
+  $('#vCur').onchange = e => setV(e.target.value);
+  $$('[data-vc]').forEach(b => b.onclick = () => setV(b.dataset.vc));
 }
 
 /* ================= ENCONTRAR CLIENTES ================= */
+let HTAB = null;
 function viewSearch() {
   const first = (ME.name || '').split(' ')[0];
-  $('#view').innerHTML = `<div class="home"><div style="position:absolute;top:14px;left:14px;z-index:2">${mobBtn()}</div>
+  const tabs = [...(SEARCH ? [['res', 'Esta pesquisa']] : []), ['recent', 'Leads recentes'], ['hot', 'Quentes'], ['searches', 'Pesquisas']];
+  if (!HTAB || !tabs.find(t => t[0] === HTAB)) HTAB = tabs[0][0];
+  $('#view').innerHTML = `<div class="home"><div class="hbg"></div><div class="mobtop">${mobBtn()}</div>
   <div class="hero">
-   <div class="h">Que clientes procuras hoje${first ? ', ' + esc(first) : ''}?</div>
-   <div class="pbox"><textarea id="q" rows="2" placeholder="Ex.: Clínicas dentárias em Austin, Texas, sem site, com menos de 60 avaliações"></textarea>
-    <div class="row"><span class="chip" data-add=" nos Estados Unidos">🇺🇸 EUA</span><span class="chip" data-add=" em Portugal">🇵🇹 Portugal</span><span class="chip" data-add=" no Brasil">🇧🇷 Brasil</span><span class="chip" data-add=" sem site">Sem site</span>
-     <span class="sp"></span><button class="btn pri" id="go">Encontrar ✦</button></div></div>
-   <div class="sugg">${SUGG.map(s => `<span class="chip" data-s="${esc(s)}">${esc(s)}</span>`).join('')}</div>
-  </div><div class="res" id="results">${SEARCH ? resultsHTML() : ''}</div></div>`;
+   <a class="toppill" href="${isPro() ? '#/numeros' : '#/planos'}"><span class="tpi">${ic('phone', 14)}</span>${isPro() ? 'Pede o teu número internacional grátis' : 'Número internacional grátis no plano Pro'}${ic('arrow', 15)}</a>
+   <h1 class="hh">Que clientes procuras hoje${first ? ', ' + esc(first) : ''}?</h1>
+   <div class="pbox"><textarea id="q" rows="2" placeholder="Pede ao droply para encontrar clínicas dentárias em Austin sem site..."></textarea>
+    <div class="row"><button class="ib round" id="plusB" aria-label="Filtros rápidos">${ic('plus')}</button>
+     <span class="chip" data-add=" nos Estados Unidos">EUA</span><span class="chip" data-add=" em Portugal">Portugal</span><span class="chip" data-add=" no Reino Unido">Reino Unido</span><span class="chip" data-add=" sem site">Sem site</span>
+     <span class="sp"></span><span class="src">Google Maps ${ic('down', 14)}</span><button class="send" id="go" aria-label="Encontrar">${ic('up')}</button></div></div>
+  </div>
+  <div class="lower"><div class="lhd"><div class="seg">${tabs.map(([k, t]) => `<button data-ht="${k}" class="${k === HTAB ? 'on' : ''}">${t}</button>`).join('')}</div><span class="sp"></span><a class="vall2" href="${HTAB === 'searches' ? '#/pesquisas' : '#/crm'}">Ver tudo ${ic('arrow', 16)}</a></div>
+   <div id="results">${homeTab()}</div></div></div>`;
   const q = $('#q');
   try { const pre = localStorage.getItem('droply:q'); if (pre) { q.value = pre; localStorage.removeItem('droply:q'); q.focus(); } } catch {}
   q.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSearch(); } };
   $$('[data-add]').forEach(c => c.onclick = () => { q.value = (q.value.trim() + c.dataset.add).trim(); q.focus(); });
-  $$('[data-s]').forEach(c => c.onclick = () => { q.value = c.dataset.s; doSearch(); });
+  $('#plusB').onclick = e => { const d = pop(e.currentTarget, `<div class="pgh">Sugestões</div>${SUGG.map(x => `<a href="javascript:void 0" class="pi" data-s="${esc(x)}">${ic('sparkle')}${esc(x)}</a>`).join('')}`); $$('[data-s]', d).forEach(c => c.onclick = () => { q.value = c.dataset.s; closePop(); doSearch(); }); d.classList.add('wide'); };
   $('#go').onclick = doSearch;
+  $$('[data-ht]').forEach(b => b.onclick = () => { HTAB = b.dataset.ht; viewSearch(); });
   bindResults();
+}
+function homeTab() {
+  if (HTAB === 'res' && SEARCH) return resultsHTML();
+  if (HTAB === 'searches') return DB.searches.length ? `<div class="pgrid">${DB.searches.map(searchCard).join('')}</div>` : emptyHome();
+  let L = Object.values(DB.leads).sort((a, b) => (b.lastAt || b.addedAt || 0) - (a.lastAt || a.addedAt || 0));
+  if (HTAB === 'hot') L = L.filter(l => l.temp === 'quente' && !isWon(l) && !isLost(l));
+  return L.length ? `<div class="pgrid">${L.slice(0, 12).map(leadCard).join('')}</div>` : (HTAB === 'hot' ? '<div class="empty"><p>Ainda não tens leads quentes. Analisa leads com IA ou marca-os como quentes.</p></div>' : emptyHome());
+}
+const emptyHome = () => `<div class="empty">${logo(40)}<div class="h">Ainda sem clientes</div><p>Escreve acima quem procuras e o droply encontra-os no Google Maps.</p></div>`;
+const searchCard = x => `<a class="pcard2" href="javascript:void 0" data-sid="${x.id}"><div class="thumb" style="--c:${colorOf(x.label)}"><span class="big">${esc((x.label[0] || '?').toUpperCase())}</span><span class="badge">${x.leadIds.length} empresas</span></div><div class="meta"><span class="mav" style="background:${colorOf(x.label)}">${esc((x.label[0] || '?').toUpperCase())}</span><div><b>${esc(x.label)}</b><small>Pesquisa de ${fmtDate(x.at)}</small></div></div></a>`;
+function viewSearches() {
+  $('#view').innerHTML = `<div class="page">${head('Pesquisas', '<a class="btn pri" href="#/">Nova pesquisa</a>')}
+  <div class="filters"><div class="sin">${ic('search', 16)}<input class="in" id="fq" placeholder="Procurar pesquisas..."></div></div>
+  <div class="pgrid" id="sg">${DB.searches.map(searchCard).join('') || '<div class="empty">Ainda sem pesquisas.</div>'}</div></div>`;
+  const bind = () => $$('#sg [data-sid]').forEach(a => a.onclick = () => openSearch(a.dataset.sid));
+  $('#fq').oninput = e => { const q = e.target.value.toLowerCase(); $('#sg').innerHTML = DB.searches.filter(x => x.label.toLowerCase().includes(q) || x.prompt.toLowerCase().includes(q)).map(searchCard).join(''); bind(); };
+  bind();
 }
 async function doSearch() {
   const prompt = $('#q').value.trim(); if (prompt.length < 4) return toast('Escreve que clientes procuras.', true);
-  const b = $('#go'); b.disabled = true; b.innerHTML = '<span class="spin"></span> A procurar...';
+  const b = $('#go'); b.disabled = true; b.innerHTML = '<span class="spin"></span>';
   try {
     const r = await api('search', { prompt });
     const s = { id: uid(), label: r.plan.label || prompt.slice(0, 40), prompt, plan: r.plan, leadIds: [], next: r.nextPageToken, at: Date.now() };
     addLeads(r.leads, s);
     DB.searches.unshift(s); DB.searches = DB.searches.slice(0, 50); save();
-    SEARCH = s; shell(); route();
+    SEARCH = s; HTAB = 'res'; shell(); route(); setTimeout(() => $('.lower')?.scrollIntoView({ behavior: 'smooth' }), 80);
     toast(r.leads.length ? `${r.leads.length} empresas encontradas ✓` : 'Nenhuma empresa passou nos filtros. Tenta alargar a pesquisa.');
     refreshMe();
-  } catch (e) { toast(e.message, true); } finally { b.disabled = false; b.innerHTML = 'Encontrar ✦'; }
+  } catch (e) { toast(e.message, true); } finally { b.disabled = false; b.innerHTML = ic('up'); }
 }
 function newLead(l, extra = {}) { return { funnel: DB.profile.funnel || 'servicos', status: 'novo', notes: '', activities: [], addedAt: Date.now(), currency: DB.profile.currency, ...l, ...extra }; }
 function addLeads(list, s) {
@@ -305,10 +483,10 @@ function addLeads(list, s) {
 async function loadMore() {
   const s = SEARCH; if (!s?.next) return;
   const b = $('#more'); b.disabled = true; b.innerHTML = '<span class="spin"></span>';
-  try { const r = await api('search', { plan: s.plan, pageToken: s.next }); addLeads(r.leads, s); s.next = r.nextPageToken; save(); $('#results').innerHTML = resultsHTML(); bindResults(); refreshMe(); toast(`+${r.leads.length} empresas`); }
+  try { const r = await api('search', { plan: s.plan, pageToken: s.next }); addLeads(r.leads, s); s.next = r.nextPageToken; save(); $('#results').innerHTML = homeTab(); bindResults(); refreshMe(); toast(`+${r.leads.length} empresas`); }
   catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'Carregar mais (1 pesquisa)'; }
 }
-function openSearch(id) { SEARCH = DB.searches.find(s => s.id === id); location.hash = '#/'; route(); setTimeout(() => $('#results')?.scrollIntoView({ behavior: 'smooth' }), 50); }
+function openSearch(id) { SEARCH = DB.searches.find(s => s.id === id); HTAB = 'res'; if (location.hash !== '#/' && location.hash !== '') location.hash = '#/'; else route(); setTimeout(() => $('.lower')?.scrollIntoView({ behavior: 'smooth' }), 80); }
 function leadTags(l) {
   const t = [];
   if (!l.website && l.source !== 'manual') t.push('<span class="tag p">SEM SITE</span>');
@@ -317,21 +495,22 @@ function leadTags(l) {
   return t.join('');
 }
 function leadCard(l) {
-  const sc = l.analysis?.score;
-  return `<div class="card lead" data-lead="${l.id}"><div class="t"><div class="av" style="background:${colorOf(l.name)}">${esc(l.name[0])}</div>
-  <div style="min-width:0"><b>${esc(l.name)}</b><small>${esc(l.category || '')}${l.category ? ' · ' : ''}${l.reviews ?? 0} avaliações${l.rating ? ' · ' + l.rating + '★' : ''}</small><br><small>${esc(l.address || '')}</small></div>
-  ${sc != null ? `<div class="score" style="color:${sc >= 80 ? 'var(--warm)' : sc >= 60 ? '#fff' : 'var(--mu)'}">${sc}</div>` : ''}</div>
-  <div class="tags">${leadTags(l)}${tempTag(l.temp)}<span class="tag">${esc(stageOf(l)[1].toUpperCase())}</span></div>
-  <div class="acts">${l.analysis ? '<button class="btn sm pri" data-open>Ver mensagens</button>' : `<button class="btn sm pri" data-an="${l.id}">${BUSY[l.id] ? '<span class="spin"></span>' : 'Analisar ✦'}</button>`}<button class="btn sm" data-open>Abrir no CRM</button></div></div>`;
+  const sc = l.analysis?.score, c = colorOf(l.name), st = stageOf(l);
+  return `<div class="pcard2 lead" data-lead="${l.id}"><div class="thumb" style="--c:${c}"><span class="big">${esc((l.name[0] || '?').toUpperCase())}</span>
+   ${sc != null ? `<span class="score">${sc}</span>` : ''}<span class="badge">${!l.website && l.source !== 'manual' ? 'Sem site' : esc(st[1])}</span>
+   <div class="hov">${l.analysis ? '<button class="btn sm pri" data-open>Ver mensagens</button>' : `<button class="btn sm pri" data-an="${l.id}">${BUSY[l.id] ? '<span class="spin"></span>' : ic('sparkle', 15) + ' Analisar'}</button>`}</div></div>
+   <div class="meta"><span class="mav" style="background:${c}">${esc((l.name[0] || '?').toUpperCase())}</span><div style="min-width:0"><b>${esc(l.name)}</b><small>${l.rating ? l.rating + '★ · ' : ''}${l.reviews ?? 0} avaliações${l.category ? ' · ' + esc(l.category) : ''}</small></div></div>
+   <div class="tags">${leadTags(l).replace('<span class="tag p">SEM SITE</span>', '')}${tempTag(l.temp)}</div></div>`;
 }
 function resultsHTML() {
   const s = SEARCH; const leads = s.leadIds.map(id => DB.leads[id]).filter(Boolean);
-  return `<div class="top"><div><div class="h" style="font-size:22px">${esc(s.label)}</div><div class="mu" style="font-size:13px">${leads.length} empresas · "${esc(s.prompt)}" · já estão no teu CRM</div></div><span class="sp"></span>
-  <button class="btn sm" id="anAll">Analisar as 5 melhores ✦</button></div>
-  <div class="grid">${leads.map(leadCard).join('') || '<div class="empty">Nenhum resultado com estes filtros.</div>'}</div>
+  return `<div class="rhd"><div><b>${esc(s.label)}</b><small>${leads.length} empresas · já estão nos teus Clientes</small></div><span class="sp"></span>
+  <button class="btn sm" id="anAll">${ic('sparkle', 15)} Analisar as 5 melhores</button></div>
+  <div class="pgrid">${leads.map(leadCard).join('') || '<div class="empty">Nenhum resultado com estes filtros.</div>'}</div>
   ${s.next ? '<div style="text-align:center;margin-top:18px"><button class="btn" id="more">Carregar mais (1 pesquisa)</button></div>' : ''}`;
 }
 function bindResults() {
+  $$('#results [data-sid]').forEach(a => a.onclick = () => openSearch(a.dataset.sid));
   $$('#results [data-lead]').forEach(c => c.onclick = e => {
     const an = e.target.closest('[data-an]'); if (an) { e.stopPropagation(); return analyze(an.dataset.an); }
     location.hash = '#/lead/' + c.dataset.lead;
@@ -351,7 +530,7 @@ async function analyze(id, quiet = false) {
   finally { delete BUSY[id]; rerender(); if (location.hash === '#/lead/' + id) openLead(id); }
 }
 function rerender() {
-  if ($('#results') && SEARCH) { $('#results').innerHTML = resultsHTML(); bindResults(); }
+  if ($('#results')) { $('#results').innerHTML = homeTab(); bindResults(); }
   if ($('#crmT')) renderCRM();
 }
 
@@ -551,7 +730,7 @@ function viewPipeline() {
   $('#view').innerHTML = `<div class="page" style="max-width:none">${head('Pipeline e funis', `<select class="in" id="pf" style="width:auto">${Object.entries(FUNNELS).map(([k, f]) => `<option value="${k}" ${k === fk ? 'selected' : ''}>${f.name}</option>`).join('')}</select>`, 'Arrasta os cartões entre as fases. Cada tipo de negócio tem o seu funil pronto.')}
   <div class="kan">${F.stages.map(([k, n, c]) => `<div class="col" data-col="${k}"><h4><i style="background:${c}"></i>${n}<span>${by(k).length}</span></h4>${total(k) ? `<div class="mu2" style="font-size:11.5px;margin:-6px 4px 8px">${money(total(k), DB.profile.currency)}</div>` : ''}
   ${by(k).map(l => `<div class="kc" draggable="true" data-id="${l.id}"><b>${esc(l.name)}</b><small>${esc((l.address || l.contact || '').split(',').slice(-2).join(',').trim())}</small><div class="tags" style="margin-top:6px">${tempTag(l.temp)}${l.value ? `<span class="tag">${money(l.value, l.currency || DB.profile.currency)}</span>` : ''}</div></div>`).join('')}</div>`).join('')}</div>
-  <div class="card pad" style="margin-top:16px"><div class="ch3" style="margin:0">Funis prontos</div><div class="grid" style="margin-top:10px">${Object.entries(FUNNELS).map(([k, f]) => `<div class="card pad" style="background:#0E0A14"><b>${f.name}</b><div class="tags" style="margin-top:8px">${f.stages.map(s => `<span class="tag" style="color:${s[2]}">${s[1]}</span>`).join('')}</div></div>`).join('')}</div></div></div>`;
+  <div class="card pad" style="margin-top:16px"><div class="ch3" style="margin:0">Funis prontos</div><div class="grid" style="margin-top:10px">${Object.entries(FUNNELS).map(([k, f]) => `<div class="card pad" style="background:var(--panel2)"><b>${f.name}</b><div class="tags" style="margin-top:8px">${f.stages.map(s => `<span class="tag" style="color:${s[2]}">${s[1]}</span>`).join('')}</div></div>`).join('')}</div></div></div>`;
   $('#pf').onchange = e => { DB.profile.pipeFunnel = e.target.value; save(); viewPipeline(); };
   $$('.kc').forEach(c => { c.ondragstart = e => e.dataTransfer.setData('id', c.dataset.id); c.onclick = () => location.hash = '#/lead/' + c.dataset.id; });
   $$('.col').forEach(col => {
@@ -808,7 +987,7 @@ function viewSales(tab = 'resumo') {
    <div class="kpi"><small>Pendente</small><b style="color:var(--warm)">${money(st.pend, st.cur)}</b><span>${st.pendN}</span></div>
    <div class="kpi"><small>Canceladas/reembolsos</small><b style="color:var(--red)">${money(st.canc, st.cur)}</b><span>${st.cancN}</span></div>
    <div class="kpi"><small>Oportunidades</small><b>${money(st.opp, st.cur)}</b><span>${st.oppN} leads</span></div>
-   <div class="kpi"><small>Ticket médio</small><b>${money(DB.sales.filter(s => s.status === 'pago' && (s.currency || st.cur) === st.cur).length ? st.total / DB.sales.filter(s => s.status === 'pago' && (s.currency || st.cur) === st.cur).length : 0, st.cur)}</b></div></div>
+   <div class="kpi"><small>Ticket médio</small><b>${money(DB.sales.filter(s => s.status === 'pago').length ? st.total / DB.sales.filter(s => s.status === 'pago').length : 0, st.cur)}</b></div></div>
   <div class="card pad"><div class="ch3">Receita por mês (${st.cur})</div>${chart(st.months, st.cur)}</div>
   <div class="card pad" style="margin-top:14px"><div class="ch3" style="margin:0">Vendas</div>
   ${DB.sales.length ? `<table class="tb"><thead><tr><th>Data</th><th>Cliente</th><th>Produto</th><th>Valor</th><th>Método</th><th>Estado</th></tr></thead><tbody>${[...DB.sales].sort((a, b) => b.at - a.at).map(s => { const x = SALE_ST.find(z => z[0] === s.status) || SALE_ST[0]; return `<tr data-s="${s.id}"><td>${fmtDate(s.at)}</td><td><b>${esc(s.client)}</b></td><td>${esc(s.product || '')}</td><td>${money(s.value, s.currency || st.cur)}</td><td class="mu">${esc(s.method || '')}</td><td><span class="tag" style="color:${x[2]}">${x[1]}</span></td></tr>`; }).join('')}</tbody></table>` : '<p class="mu" style="padding:10px 0">Ainda sem vendas. Regista uma venda ou fecha um lead no CRM.</p>'}</div>`;
