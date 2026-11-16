@@ -15,5 +15,5 @@ export default async function (req, res) {
       frag = j.access_token ? `gh_token=${encodeURIComponent(j.access_token)}&state=${encodeURIComponent(state)}` : 'gh_error=' + encodeURIComponent(j.error_description || 'Falha na ligação ao GitHub.');
     } catch { frag = 'gh_error=' + encodeURIComponent('Falha na ligação ao GitHub.'); }
   }
-  res.statusCode = 302; res.setHeader('Location', '/#/sites?' + frag); res.end();
+  res.statusCode = 302; res.setHeader('Location', '/app#/sites?' + frag); res.end();
 }
