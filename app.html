@@ -6,17 +6,18 @@
 <title>droply · App</title>
 <meta name="robots" content="noindex">
 <meta name="description" content="Diz quem procuras. O droply encontra clientes em qualquer país, diz o que precisam e entrega a mensagem pronta.">
-<meta name="theme-color" content="#0A0710">
+<meta name="theme-color" content="#1A1A1A">
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/app.css">
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 <div id="root"><div class="boot"><img src="/assets/logo.svg" alt="" width="56" height="56"></div></div>
 <div id="toast"></div>
 <div id="modal" class="modal" hidden></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="/droply-supabase.js"></script>
 <script src="/app.js" type="module"></script>
 </body>
 </html>

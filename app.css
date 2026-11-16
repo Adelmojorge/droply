@@ -374,3 +374,25 @@ label.lb{font:500 13px Inter;letter-spacing:0;text-transform:none;color:#D4D4D4}
 .saved a.vall{height:auto;color:var(--mu2);font-size:13px}.saved a.vall:hover{color:#fff;background:none}
 .pcard2 .tags:empty{display:none}
 @media (max-width:860px){.toppill{font-size:13px;text-align:left}}
+/* ===== v5: contas (Supabase) ===== */
+.box.auth{width:min(420px,100%);text-align:center}.box.auth.wide{width:min(560px,100%)}
+.alogo{display:flex;justify-content:center}
+.box.auth .h{font-size:38px;margin-top:18px}
+.box.auth>p{font-size:15.5px;margin-top:10px}
+.aform{text-align:left;margin-top:24px;background:rgba(30,30,30,.82);border:1px solid var(--line2);border-radius:20px;padding:6px 20px 20px;backdrop-filter:blur(10px)}
+.aform .btn.big{width:100%;padding:12px;margin-top:18px;font-size:15px}
+.aerr{color:#FFB3C1;font-size:13.5px;margin-top:10px}
+.alink{display:block;text-align:center;color:#D4D4D4;font-size:13.5px;margin-top:12px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.alink:hover{color:#fff}
+.anote{margin-top:18px;font-size:14px;color:#C9C9C9}.anote a{color:#fff;font-weight:600}
+.avpick{display:flex;align-items:center;gap:14px;margin-top:14px}
+.avp{width:64px;height:64px;border-radius:50%;border:1px dashed var(--line2);background:#262626;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;flex:none;color:var(--mu)}
+.avp img{width:100%;height:100%;object-fit:cover}
+.avpick b{display:block;font-weight:600}.avpick small{display:block;color:var(--mu);font-size:12.5px;margin-bottom:4px}
+.avpick .alink{display:inline;text-align:left}
+.unw{position:relative}.unw span{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--mu)}.unw input.in{padding-left:28px}
+.hint{display:block;font-size:12.5px;color:var(--mu2);margin-top:6px}.hint.ok{color:var(--won)}.hint.bad{color:var(--red)}
+.mrow{display:flex;align-items:center;gap:10px}
+.sync{font-size:12px;color:var(--mu2)}.sync[data-st="a guardar"]{color:var(--warm)}.sync[data-st="erro"]{color:var(--red)}
+.rbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px;background:rgba(255,92,122,.12);border-bottom:1px solid rgba(255,92,122,.35);color:#FFD1DA;font-size:13.5px;position:relative;z-index:5}
+.rbar span{flex:1;min-width:200px}.main{display:flex;flex-direction:column}.main .scroll{position:relative;inset:auto;flex:1;min-height:0}

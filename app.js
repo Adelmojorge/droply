@@ -110,16 +110,30 @@ const SUGG = ['Dentistas em Austin, Texas, sem site', 'Restaurantes em Lisboa co
 
 let CFG = {}, ME = null, TOKEN = null, DB = null, SEARCH = null, BUSY = {};
 
-/* ---------------- armazenamento local ---------------- */
-const KEY = () => 'droply:' + (ME?.email || 'anon');
-function load() {
-  try { DB = JSON.parse(localStorage.getItem(KEY())) || {}; } catch { DB = {}; }
+/* ---------------- armazenamento: Supabase (conta do utilizador) ---------------- */
+let READONLY = false, saveT = null, saveWarned = false;
+function normalize() {
+  DB ||= {};
   DB.leads ||= {}; DB.searches ||= []; DB.sites ||= {}; DB.profile ||= {}; DB.gh ||= null;
   DB.sequences ||= []; DB.sales ||= []; DB.products ||= []; DB.pay ||= {}; DB.studio ||= [];
   for (const l of Object.values(DB.leads)) { l.funnel ||= 'servicos'; l.status ||= 'novo'; l.activities ||= []; if (!l.temp && l.analysis?.temperature) l.temp = l.analysis.temperature; }
   for (const s of Object.values(DB.sites)) s.leadId ??= null;
 }
-function save() { try { localStorage.setItem(KEY(), JSON.stringify(DB)); } catch { toast('O armazenamento do navegador está cheio. Exporta uma cópia e apaga sites antigos.', true); } }
+async function load() { DB = await droplyDB.loadAll(); normalize(); }
+function save() {
+  if (READONLY) { if (!saveWarned) { saveWarned = true; toast('O teu plano expirou: podes ver os dados, mas as alterações não são guardadas. Renova para continuar.', true); } return; }
+  setSync('a guardar');
+  clearTimeout(saveT); saveT = setTimeout(flush, 1500);
+}
+async function flush() {
+  clearTimeout(saveT); saveT = null;
+  if (!DB || READONLY) return;
+  try { await droplyDB.saveAll(DB); setSync('guardado'); }
+  catch (e) { setSync('erro'); toast('Não consegui guardar: ' + e.message, true); }
+}
+function setSync(st) { const el = $('#sync'); if (el) { el.dataset.st = st; el.textContent = st === 'a guardar' ? 'A guardar...' : st === 'erro' ? 'Erro ao guardar' : 'Guardado'; } }
+addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && saveT) flush(); });
+addEventListener('beforeunload', e => { if (saveT) { flush(); e.preventDefault(); e.returnValue = ''; } });
 const allSeqs = () => [...SEQS, ...DB.sequences];
 const funnelOf = l => FUNNELS[l?.funnel] || FUNNELS.servicos;
 const stageOf = l => funnelOf(l).stages.find(s => s[0] === l.status) || funnelOf(l).stages[0];
@@ -144,60 +158,112 @@ const tempTag = t => { const x = TEMPS.find(a => a[0] === t); return x ? `<span 
 function download(name, content, type) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([content], { type })); a.download = name; a.click(); }
 
 /* ---------------- API e sessão ---------------- */
-function tokenValid(t) { try { const p = JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); return p.exp * 1000 > Date.now() + 30000; } catch { return false; } }
-let reauthWait = null;
-function reauth() {
-  if (reauthWait) return reauthWait;
-  reauthWait = new Promise(res => { window.__onCred = t => { res(t); reauthWait = null; }; try { google.accounts.id.prompt(); } catch {} setTimeout(() => { res(null); reauthWait = null; }, 15000); });
-  return reauthWait;
-}
-async function api(path, data, retry = true) {
-  if (!TOKEN || !tokenValid(TOKEN)) { const t = await reauth(); if (!t) { logout(true); throw new Error('Sessão expirada. Entra outra vez.'); } }
-  const r = await fetch('/api/' + path, { method: data ? 'POST' : 'GET', headers: { Authorization: 'Bearer ' + TOKEN, ...(data ? { 'Content-Type': 'application/json' } : {}) }, body: data ? JSON.stringify(data) : undefined });
+async function api(path, data) {
+  const token = await droplyDB.token();
+  if (!token) { logout(true); throw new Error('Sessão expirada. Entra outra vez.'); }
+  const r = await fetch('/api/' + path, { method: data ? 'POST' : 'GET', headers: { Authorization: 'Bearer ' + token, ...(data ? { 'Content-Type': 'application/json' } : {}) }, body: data ? JSON.stringify(data) : undefined });
   const j = await r.json().catch(() => ({ error: 'Resposta inválida do servidor.' }));
-  if (r.status === 401 && retry) { const t = await reauth(); if (t) return api(path, data, false); logout(true); }
-  if (r.status === 402 && j.code === 'no_plan') { ME = { ...ME, allowed: false, plan: null }; renderNoAccess(); }
+  if (r.status === 401) { logout(true); }
+  if (r.status === 402 && j.code === 'no_plan' && ME) { ME = { ...ME, allowed: false }; READONLY = true; renewBanner(); }
   if (!r.ok) throw new Error(j.error || 'Erro ' + r.status);
   return j;
 }
-async function refreshMe() { try { const m = await api('me'); ME = { ...ME, ...m }; renderQuota(); } catch {} }
-function onCredential(resp) {
-  TOKEN = resp.credential; try { localStorage.setItem('droply:token', TOKEN); } catch {}
-  if (window.__onCred) { window.__onCred(TOKEN); window.__onCred = null; return; }
-  start();
+async function refreshMe() { try { const m = await api('me'); ME = { ...ME, ...m }; } catch {} }
+async function logout(expired = false) {
+  if (saveT) await flush();
+  try { await droplyDB.signOut(); } catch {}
+  ME = null; DB = null; READONLY = false;
+  history.replaceState(null, '', location.pathname);
+  renderLogin(expired ? 'A tua sessão expirou. Entra outra vez.' : '');
 }
-function initGoogle() {
-  if (!window.google?.accounts?.id) return setTimeout(initGoogle, 150);
-  google.accounts.id.initialize({ client_id: CFG.googleClientId, callback: onCredential, auto_select: true, cancel_on_tap_outside: false, use_fedcm_for_prompt: true });
-  const g = $('#gbtn'); if (g) google.accounts.id.renderButton(g, { theme: 'filled_black', size: 'large', shape: 'pill', text: 'continue_with', locale: 'pt-PT', width: 300 });
-}
-function logout(expired = false) {
-  try { localStorage.removeItem('droply:token'); google.accounts.id.disableAutoSelect(); } catch {}
-  TOKEN = null; ME = null; renderLogin(expired ? 'A tua sessão expirou. Entra outra vez.' : '');
-}
+const authBox = (inner, wide = false) => `<div class="login"><div class="box auth${wide ? ' wide' : ''}"><a href="/" class="alogo">${logo(52)}</a>${inner}</div></div>`;
 function renderLogin(msg = '') {
-  $('#root').innerHTML = `<div class="login"><div class="box">
-  <a href="/" style="display:flex;justify-content:center">${logo(72)}</a>
-  <div class="h">Diz quem procuras.<br><span class="gt">O droply encontra.</span></div>
-  <p>Encontra clientes, vende, entrega e recebe. A tua agência de IA num só lugar.</p>
-  <div class="g"><div id="gbtn"></div></div>
-  ${msg ? `<p style="font-size:14px;color:#FFC2CE">${esc(msg)}</p>` : ''}
-  ${!CFG.googleClientId ? '<p class="note" style="margin-top:20px">Falta configurar GOOGLE_CLIENT_ID na Vercel.</p>' : ''}
-  <small>Ao entrar aceitas os <a href="/termos.html">Termos</a> e a <a href="/privacidade.html">Política de Privacidade</a>.<br><a href="/">Conhecer o droply</a> · by Drop Code Studio</small></div></div>`;
-  initGoogle();
+  $('#root').innerHTML = authBox(`<div class="h">Entrar no <span class="gt">droply</span></div>
+  <p>Encontra clientes, vende, entrega e recebe.</p>
+  <form id="lf" class="aform" autocomplete="on">
+   <label class="lb">Email ou nome de utilizador</label><input class="in" id="lu" name="username" autocomplete="username" required placeholder="tu@email.com ou o_teu_nome">
+   <label class="lb">Palavra-passe</label><input class="in" id="lp" type="password" name="password" autocomplete="current-password" required minlength="1" placeholder="••••••••">
+   ${msg ? `<p class="aerr">${esc(msg)}</p>` : ''}
+   <button class="btn pri big" id="lb">Entrar</button>
+   <a href="javascript:void 0" id="fp" class="alink">Esqueci a palavra-passe</a>
+  </form>
+  <div class="anote">Ainda não tens acesso? <a href="/#precos">Escolhe um plano</a>. Depois do pagamento recebes o teu link de acesso.</div>
+  <small>Ao entrar aceitas os <a href="/termos.html">Termos</a> e a <a href="/privacidade.html">Política de Privacidade</a>.</small>`);
+  $('#lu').focus();
+  $('#lf').onsubmit = async e => {
+    e.preventDefault(); const b = $('#lb'); b.disabled = true; b.innerHTML = '<span class="spin"></span>';
+    try { await droplyDB.signIn($('#lu').value, $('#lp').value); await afterAuth(); }
+    catch (err) { b.disabled = false; b.textContent = 'Entrar'; let p = $('.aerr'); if (!p) { p = document.createElement('p'); p.className = 'aerr'; $('#lb').before(p); } p.textContent = err.message; }
+  };
+  $('#fp').onclick = () => {
+    const m = modal(`<div class="h" style="font-size:22px">Recuperar a palavra-passe</div><p class="mu" style="margin-top:6px">Escreve o teu email. Se tiver conta, enviamos um link para definires uma nova palavra-passe.</p>
+    <label class="lb">Email</label><input class="in" id="re" type="email" placeholder="tu@email.com" value="${esc(($('#lu').value || '').includes('@') ? $('#lu').value : '')}">
+    <div class="row-acts" style="margin-top:14px"><button class="btn pri" id="rs">Enviar link</button>${CFG.supportWhatsApp ? `<a class="btn" target="_blank" rel="noopener" href="https://wa.me/${CFG.supportWhatsApp}?text=${encodeURIComponent('Olá! Preciso de um novo link de acesso ao droply.')}">Pedir novo link ao suporte</a>` : ''}</div>
+    <p class="mu2" style="font-size:12.5px;margin-top:10px">Se o email não chegar em alguns minutos, vê o spam ou pede um novo link ao suporte.</p>`, 'dialog');
+    $('#rs', m).onclick = async () => { const b = $('#rs', m); b.disabled = true; try { await droplyDB.resetPassword($('#re', m).value); closeModal(); toast('Se o email tiver conta, o link chega em instantes ✓'); } catch (e) { b.disabled = false; toast(e.message, true); } };
+  };
+}
+/* criar conta (destino do link de acesso) e nova palavra-passe */
+async function renderCreateAccount() {
+  let prof = null; try { prof = await droplyDB.profile(); } catch {}
+  const hasUser = !!prof?.username;
+  $('#root').innerHTML = authBox(`<div class="h" style="font-size:34px">${hasUser ? 'Nova palavra-passe' : 'Cria a tua conta'}</div>
+  <p>${hasUser ? 'Define uma nova palavra-passe para entrares no droply.' : 'Bem-vindo ao droply! Escolhe como queres entrar daqui em diante.'}</p>
+  <form id="cf" class="aform">
+   ${hasUser ? '' : `<div class="avpick"><label class="avp" for="cfA"><img id="cfI" alt="" hidden><span id="cfL">${ic('camera', 22)}</span></label><div><b>Foto de perfil</b><small>Opcional · JPG ou PNG até 2 MB</small><input type="file" id="cfA" accept="image/jpeg,image/png,image/webp,image/gif" hidden><label for="cfA" class="alink" style="margin:0">Escolher foto</label></div></div>
+   <label class="lb">O teu nome</label><input class="in" id="cfN" required value="${esc(prof?.full_name || '')}" placeholder="Ex.: Ana Silva">
+   <label class="lb">Nome de utilizador</label><div class="unw"><span>@</span><input class="in" id="cfU" required autocomplete="username" placeholder="ana_silva" pattern="[a-zA-Z0-9_.]{3,30}"></div><small id="cfUm" class="hint">3 a 30 caracteres: letras, números, _ ou .</small>`}
+   <label class="lb">Palavra-passe</label><input class="in" id="cfP" type="password" minlength="8" required autocomplete="new-password" placeholder="Mínimo 8 caracteres">
+   <label class="lb">Confirmar palavra-passe</label><input class="in" id="cfP2" type="password" minlength="8" required autocomplete="new-password">
+   <p class="aerr" id="cfE" hidden></p>
+   <button class="btn pri big" id="cfB">${hasUser ? 'Guardar e entrar' : 'Criar conta e entrar'}</button>
+  </form>
+  <small>Conta: <b>${esc(prof?.email || '')}</b></small>`);
+  let file = null, uOK = hasUser, uT;
+  const err = m => { const e = $('#cfE'); e.hidden = !m; e.textContent = m || ''; };
+  if (!hasUser) {
+    $('#cfA').onchange = e => { const f = e.target.files[0]; if (!f) return; if (f.size > 2 * 1024 * 1024) { e.target.value = ''; return err('A foto tem de ter no máximo 2 MB.'); } file = f; const i = $('#cfI'); i.src = URL.createObjectURL(f); i.hidden = false; $('#cfL').hidden = true; err(''); };
+    $('#cfU').oninput = () => { clearTimeout(uT); uOK = false; const v = $('#cfU').value.trim().toLowerCase(), h = $('#cfUm');
+      if (!/^[a-z0-9_.]{3,30}$/.test(v)) { h.textContent = '3 a 30 caracteres: letras, números, _ ou .'; h.className = 'hint'; return; }
+      h.textContent = 'A verificar...'; h.className = 'hint';
+      uT = setTimeout(async () => { try { uOK = await droplyDB.usernameAvailable(v); h.textContent = uOK ? '@' + v + ' está disponível ✓' : '@' + v + ' já está em uso'; h.className = 'hint ' + (uOK ? 'ok' : 'bad'); } catch { h.textContent = 'Não consegui verificar.'; } }, 350); };
+  }
+  $('#cf').onsubmit = async e => {
+    e.preventDefault(); err('');
+    const pw = $('#cfP').value; if (pw.length < 8) return err('A palavra-passe precisa de pelo menos 8 caracteres.');
+    if (pw !== $('#cfP2').value) return err('As palavras-passe não coincidem.');
+    if (!hasUser && !uOK) return err('Escolhe um nome de utilizador disponível.');
+    const b = $('#cfB'); b.disabled = true; b.innerHTML = '<span class="spin"></span>';
+    try {
+      await droplyDB.finishInvite(hasUser ? { password: pw } : { password: pw, username: $('#cfU').value.trim().toLowerCase(), fullName: $('#cfN').value.trim() });
+      if (file) { try { await droplyDB.uploadAvatar(file); } catch (x) { toast('Conta criada, mas a foto falhou: ' + x.message, true); } }
+      history.replaceState(null, '', location.pathname + '#/'); toast(hasUser ? 'Palavra-passe atualizada ✓' : 'Conta criada ✓ Bem-vindo!'); start();
+    } catch (x) { b.disabled = false; b.textContent = hasUser ? 'Guardar e entrar' : 'Criar conta e entrar'; err(x.message); }
+  };
+}
+async function afterAuth() {
+  if (location.hash.startsWith('#/criar-conta')) return renderCreateAccount();
+  let prof = null; try { prof = await droplyDB.profile(); } catch {}
+  if (prof && !prof.username) { history.replaceState(null, '', location.pathname + '#/criar-conta'); return renderCreateAccount(); }
+  return start();
 }
 function renderNoAccess() {
   const first = (ME.name || '').split(' ')[0];
   $('#root').innerHTML = `<div class="login plansp"><div class="box wide">
   <div style="display:flex;justify-content:center">${logo(56)}</div>
-  <div class="h" style="font-size:clamp(30px,5vw,42px)">${ME.expired ? 'A tua assinatura expirou' : `Bem-vindo${first ? ', ' + esc(first) : ''}!`}<br><span class="gt">Escolhe o teu plano.</span></div>
-  <p>Entraste como <b>${esc(ME.email)}</b>. Escolhe um plano para começar a encontrar clientes com o droply.</p>
+  <div class="h" style="font-size:clamp(30px,5vw,42px)">Olá${first ? ', ' + esc(first) : ''}!<br><span class="gt">Falta ativar o teu plano.</span></div>
+  <p>A conta <b>${esc(ME.email)}</b> ainda não tem um plano ativo. Escolhe um plano e paga no checkout. Assim que o pagamento for confirmado, ativamos o teu acesso.</p>
   ${plansHTML('')}
-  <div style="display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap">${CFG.supportWhatsApp ? `<a class="btn" href="https://wa.me/${CFG.supportWhatsApp}?text=${encodeURIComponent('Olá! Já paguei o droply. Conta: ' + ME.email)}" target="_blank" rel="noopener">Já paguei · falar com o suporte</a>` : ''}<button class="btn" id="rf">Já ativaram · entrar</button><button class="btn ghost" id="out">Usar outra conta</button></div>
-  <small>Pagamento mensal em kwanzas. Cancela quando quiseres. O acesso é ativado no e-mail Google com que entraste.</small></div></div>`;
+  <div style="display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap">${CFG.supportWhatsApp ? `<a class="btn" href="https://wa.me/${CFG.supportWhatsApp}?text=${encodeURIComponent('Olá! Já paguei o droply. Conta: ' + ME.email)}" target="_blank" rel="noopener">Já paguei · falar com o suporte</a>` : ''}<button class="btn" id="rf">Já foi ativado · entrar</button><button class="btn ghost" id="out">Sair</button></div>
+  <small>Pagamento mensal em kwanzas, por Multicaixa Express ou referência.</small></div></div>`;
   $$('[data-buy]').forEach(b => b.onclick = () => payModal(b.dataset.buy));
   $('#out').onclick = () => logout();
   $('#rf').onclick = () => start();
+}
+function renewBanner() {
+  if (!READONLY || $('#rbar')) return;
+  const url = ME?.renewUrl || CFG.checkout?.[ME?.lastPlan || 'basico'];
+  $('.main')?.insertAdjacentHTML('afterbegin', `<div class="rbar" id="rbar">${ic('clock', 16)}<span>O teu plano ${esc(ME?.lastPlan === 'pro' ? 'Pro' : 'Básico')} expirou${ME?.until ? ' a ' + new Date(ME.until).toLocaleDateString('pt-PT') : ''}. Continuas a ver os teus dados, mas não podes editar.</span><a class="btn sm pri" href="${esc(url || '#/planos')}" target="_blank" rel="noopener">Renovar</a></div>`);
 }
 
 /* ---------------- shell ---------------- */
@@ -232,7 +298,7 @@ function shell() {
     ${DB.searches.length ? '<a href="#/pesquisas" class="vall">Ver tudo</a>' : ''}</div>
    <div class="sfoot">
     <a class="promo" href="#/numeros"><div><b>${isPro() ? 'O teu número grátis' : 'Número internacional'}</b><small>${isPro() ? 'Pede o teu número de qualquer país' : 'Grátis no plano Pro'}</small></div><span class="art">${ic('phone', 20)}</span></a>
-    <button class="me" id="meBtn" aria-label="Conta">${av}</button>
+    <div class="mrow"><button class="me" id="meBtn" aria-label="Conta">${av}</button><span id="sync" class="sync" data-st="guardado">Guardado</span></div>
    </div>
   </aside>
   <main class="main"><div class="scroll" id="view"></div></main></div>`;
@@ -267,7 +333,7 @@ function wsMenu(a) {
   pop(a, `<div class="phd"><span class="wsav lg">${esc(first[0].toUpperCase())}</span><div><b>${esc(first)}'s droply</b><small>${ME.admin ? 'Administrador · sem limites' : 'Plano ' + esc(ME.planInfo?.name || '') + (ME.until ? ' · renova a ' + fmtDate(ME.until) : '')}</small></div></div>
   <div class="pcard"><div class="ur" style="margin:0 0 6px"><b>Uso este mês</b><a href="#/planos" class="plink">${isPro() ? 'Planos' : 'Passar para o Pro'}</a></div>${usageRows()}<small class="mu2">Os limites renovam no dia 1 de cada mês.</small></div>
   <a href="#/definicoes" class="pi">${ic('settings')}Definições</a>
-  ${ME.admin ? `<a href="#/admin" class="pi">${ic('key')}Gerir assinaturas</a>` : ''}
+  ${ME.staff ? `<a href="#/admin" class="pi">${ic('key')}Acessos de clientes</a>` : ''}
   ${!isPro() ? `<a href="#/planos" class="pi grad">${ic('zap')}Passar para o Pro</a>` : ''}`).classList.add('wide');
 }
 function meMenu(a) {
@@ -329,7 +395,7 @@ function route() {
   if (['crm', 'leads', 'pipeline', 'followups'].includes(r)) { V[r](); return clientTabs(r === 'leads' ? 'crm' : r); }
   if (r === 'lead') { viewCRM(); clientTabs('crm'); return openLead(parts[1]); }
   if (r === 'site') return viewSite(parts[1]);
-  if (r === 'admin' && ME.admin) return viewAdmin();
+  if (r === 'admin' && ME.staff) return viewAdmin();
   if (V[r]) return V[r]();
   location.hash = '#/';
 }
@@ -1074,7 +1140,11 @@ function viewNumbers() {
 function viewSettings() {
   const p = DB.profile;
   $('#view').innerHTML = `<div class="page" style="max-width:760px">${head('Definições')}
-  <div class="card pad" style="margin-top:18px"><div class="h" style="font-size:18px">O teu negócio</div>
+  <div class="card pad" style="margin-top:18px"><div class="h" style="font-size:18px">Perfil</div>
+   <div class="avpick" style="margin-top:12px"><label class="avp" for="sfA">${ME.picture ? `<img src="${esc(ME.picture)}" alt="">` : `<span>${ic('camera', 22)}</span>`}</label><div><b>${esc(ME.name || '')}</b><small>@${esc(ME.username || '')} · ${esc(ME.email)}</small><input type="file" id="sfA" accept="image/jpeg,image/png,image/webp,image/gif" hidden><label for="sfA" class="alink" style="margin:0">Trocar foto</label></div></div>
+   <div class="g2"><div><label class="lb">Nome</label><input class="in" id="sfN" value="${esc(ME.name || '')}"></div><div><label class="lb">Nome de utilizador</label><input class="in" id="sfU" value="${esc(ME.username || '')}"></div></div>
+   <div class="row-acts"><button class="btn sm pri" id="sfS">Guardar perfil</button><button class="btn sm" id="sfP">Mudar palavra-passe</button></div></div>
+  <div class="card pad" style="margin-top:14px"><div class="h" style="font-size:18px">O teu negócio</div>
    <div class="g2"><div><label class="lb">Moeda principal</label><select class="in" id="pCur">${CURRENCIES.map(c => `<option value="${c}" ${c === p.currency ? 'selected' : ''}>${c} · ${CUR_NAMES[c]}</option>`).join('')}</select></div>
    <div><label class="lb">Funil por defeito</label><select class="in" id="pFun">${Object.entries(FUNNELS).map(([k, f]) => `<option value="${k}" ${k === (p.funnel || 'servicos') ? 'selected' : ''}>${f.name}</option>`).join('')}</select></div></div></div>
   <div class="card pad" style="margin-top:14px"><div class="h" style="font-size:18px">O teu tom de voz</div><p class="mu" style="font-size:13.5px">O droply usa isto para escrever as mensagens como tu.</p>
@@ -1088,34 +1158,76 @@ function viewSettings() {
   <div class="card pad" style="margin-top:14px"><div class="h" style="font-size:18px">Integrações</div>
    <div style="display:flex;align-items:center;gap:10px;margin-top:12px"><b>GitHub</b><span class="mu">${DB.gh?.token ? 'Ligado como @' + esc(DB.gh.login || '') : 'Não ligado'}</span><span style="flex:1"></span>${DB.gh?.token ? '<button class="btn sm" id="ghOff">Desligar</button>' : '<button class="btn sm" id="ghOn">Ligar</button>'}</div></div>
   <div class="card pad" style="margin-top:14px"><div class="h" style="font-size:18px">Os teus dados</div>
-   <p class="mu" style="font-size:13.5px;margin-top:4px">CRM, vendas, sites e criações ficam guardados <b>só neste navegador</b>. Faz uma cópia de segurança regularmente.</p>
-   <div class="row-acts"><button class="btn" id="exp">Exportar cópia (.json)</button><label class="btn">Importar cópia<input type="file" id="imp" accept="application/json" hidden></label><button class="btn ghost" id="wipe" style="color:var(--red)">Apagar tudo</button></div></div>
-  <div class="card pad" style="margin-top:14px"><div class="h" style="font-size:18px">O teu plano</div><p style="margin-top:6px">${ME.admin ? 'Administrador · sem limites' : `Plano <b>${esc(ME.planInfo?.name || '')}</b>${ME.until ? ' · ativo até ' + new Date(ME.until).toLocaleDateString('pt-PT') : ''}`}</p><div class="row-acts"><a class="btn sm" href="#/planos">Ver planos</a>${ME.admin ? '<a class="btn sm" href="#/admin">Gerir assinaturas</a>' : ''}</div></div>
+   <p class="mu" style="font-size:13.5px;margin-top:4px">Clientes, vendas, sites e criações ficam guardados na tua conta droply, na nuvem. Entras em qualquer dispositivo e está tudo lá.</p>
+   <div class="row-acts"><button class="btn" id="exp">Exportar cópia (.json)</button><label class="btn">Importar cópia<input type="file" id="imp" accept="application/json" hidden></label><button class="btn ghost" id="wipe" style="color:var(--red)">Apagar todos os dados</button></div></div>
+  <div class="card pad" style="margin-top:14px"><div class="h" style="font-size:18px">O teu plano</div><p style="margin-top:6px">${ME.staff ? (ME.role === 'admin' ? 'Administrador' : 'Equipa') + ' · sem limites' : READONLY ? `Plano <b>${ME.lastPlan === 'pro' ? 'Pro' : 'Básico'}</b> · <span style="color:var(--red)">expirado</span>` : `Plano <b>${esc(ME.planInfo?.name || '')}</b>${ME.until ? ' · válido até ' + new Date(ME.until).toLocaleDateString('pt-PT') : ''}`}</p><div class="row-acts">${!ME.staff ? `<a class="btn sm pri" href="${esc(ME.renewUrl || CFG.checkout?.[ME.plan || ME.lastPlan || 'basico'] || '#/planos')}" target="_blank" rel="noopener">Renovar</a>` : ''}<a class="btn sm" href="#/planos">Ver planos</a>${ME.staff ? '<a class="btn sm" href="#/admin">Acessos de clientes</a>' : ''}</div></div>
   <div class="row-acts" style="margin-top:14px"><button class="btn" id="lo">Terminar sessão</button><a class="btn ghost" href="/" target="_blank">Página do droply</a><a class="btn ghost" href="/privacidade.html" target="_blank">Privacidade</a><a class="btn ghost" href="/termos.html" target="_blank">Termos</a></div></div>`;
   $('#pSave').onclick = () => { const tone = $('#pTone').value.trim(), ex = $('#pEx').value.trim(); Object.assign(DB.profile, { currency: $('#pCur').value, funnel: $('#pFun').value, name: $('#pName').value.trim(), company: $('#pCo').value.trim(), services: $('#pSv').value.trim(), toneRaw: tone, tone: tone + (ex ? '\nExemplo de mensagem do vendedor: ' + ex : ''), example: ex, signature: $('#pSig').value.trim() }); save(); toast('Guardado ✓'); };
   $('#ghOn') && ($('#ghOn').onclick = connectGithub);
   $('#ghOff') && ($('#ghOff').onclick = () => { DB.gh = null; save(); viewSettings(); });
   $('#exp').onclick = () => download(`droply-copia-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ ...DB, gh: null }, null, 1), 'application/json');
-  $('#imp').onchange = async e => { try { const d = JSON.parse(await e.target.files[0].text()); if (!d.leads) throw 0; DB = { ...d, gh: DB.gh }; save(); load(); toast('Cópia importada ✓'); shell(); route(); } catch { toast('Ficheiro inválido.', true); } };
-  $('#wipe').onclick = () => { if (!confirm('Apagar todos os dados deste navegador? Não dá para desfazer.')) return; localStorage.removeItem(KEY()); load(); shell(); route(); };
+  $('#imp').onchange = async e => { try { const d = JSON.parse(await e.target.files[0].text()); if (!d.leads) throw 0; DB = { ...DB, ...d, profile: { ...DB.profile, ...d.profile }, gh: DB.gh }; normalize(); save(); toast('Cópia importada ✓'); shell(); route(); } catch { toast('Ficheiro inválido.', true); } };
+  $('#wipe').onclick = () => { if (!confirm('Apagar TODOS os teus clientes, vendas, sites e criações da tua conta? Não dá para desfazer.')) return; DB = { profile: DB.profile, gh: DB.gh, pay: DB.pay }; normalize(); save(); shell(); route(); };
+  $('#sfA').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { toast('A enviar a foto...'); ME.picture = await droplyDB.uploadAvatar(f); toast('Foto atualizada ✓'); shell(); route(); } catch (x) { toast(x.message, true); } };
+  $('#sfS').onclick = async () => { const u = $('#sfU').value.trim().toLowerCase(), n = $('#sfN').value.trim();
+    try { if (u !== ME.username) { if (!/^[a-z0-9_.]{3,30}$/.test(u)) throw new Error('Nome de utilizador: 3 a 30 caracteres (letras, números, _ ou .).'); if (!(await droplyDB.usernameAvailable(u))) throw new Error('@' + u + ' já está em uso.'); }
+      await droplyDB.updateProfile({ full_name: n, username: u }); Object.assign(ME, { name: n, username: u }); toast('Perfil guardado ✓'); shell(); route(); } catch (x) { toast(x.message, true); } };
+  $('#sfP').onclick = () => { const m = modal(`<div class="h" style="font-size:22px">Mudar palavra-passe</div><label class="lb">Nova palavra-passe</label><input class="in" type="password" id="np1" minlength="8" placeholder="Mínimo 8 caracteres"><label class="lb">Confirmar</label><input class="in" type="password" id="np2"><div class="row-acts" style="margin-top:14px"><button class="btn pri" id="npS">Guardar</button></div>`, 'dialog');
+    $('#npS', m).onclick = async () => { const a = $('#np1', m).value; if (a.length < 8) return toast('Mínimo 8 caracteres.', true); if (a !== $('#np2', m).value) return toast('As palavras-passe não coincidem.', true); try { await droplyDB.finishInvite({ password: a }); closeModal(); toast('Palavra-passe atualizada ✓'); } catch (x) { toast(x.message, true); } }; };
   $('#lo').onclick = () => logout();
 }
 
-/* ================= ADMIN ================= */
+/* ================= ACESSOS (admin / equipa) ================= */
+const PLN = { basic: 'Básico', basico: 'Básico', pro: 'Pro' };
+function accessResult(r, title) {
+  const msg = `Olá! O teu acesso ao droply (plano ${PLN[r.plan] || r.plan}) está pronto 🎉\n\n1. Abre este link (válido 24 h): ${r.link}\n2. Escolhe o teu nome de utilizador, a palavra-passe e a tua foto.\n3. Depois entras sempre em ${location.origin}/app\n\nO plano é válido até ${new Date(r.valid_until).toLocaleDateString('pt-PT')}.`;
+  const m = modal(`<div class="h" style="font-size:22px">${title}</div><p class="mu" style="margin-top:6px">${esc(r.email)} · Plano ${esc(PLN[r.plan] || r.plan || '')}${r.valid_until ? ' · válido até ' + new Date(r.valid_until).toLocaleDateString('pt-PT') : ''}</p>
+  ${r.link ? `<label class="lb">Link de acesso (válido 24 h)</label><div class="paym"><div style="min-width:0"><b style="font-size:12px">${esc(r.link)}</b></div></div>
+  <div class="row-acts" style="margin-top:12px"><button class="btn pri" id="arC">Copiar link</button><a class="btn wa" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(msg)}">Enviar no WhatsApp</a><a class="btn" href="mailto:${esc(r.email)}?subject=${encodeURIComponent('O teu acesso ao droply')}&body=${encodeURIComponent(msg)}">Enviar por email</a></div>` : '<p style="margin-top:10px">Acesso renovado ✓</p>'}`, 'dialog');
+  $('#arC', m) && ($('#arC', m).onclick = () => copy(r.link));
+}
 async function viewAdmin() {
-  $('#view').innerHTML = `<div class="page" style="max-width:860px">${head('Assinaturas', '', 'Quando alguém paga, ativa aqui o plano no e-mail Google dessa pessoa. Renovar soma meses ao fim do plano atual.')}
-  <div class="card pad" style="margin-top:16px"><div class="adm"><input class="in" id="ae" placeholder="email@gmail.com"><select class="in" id="ap"><option value="basico">Básico · ${kz(CFG.plans?.basico?.price)}</option><option value="pro">Pro · ${kz(CFG.plans?.pro?.price)}</option></select>
-   <select class="in" id="am"><option value="1">1 mês</option><option value="3">3 meses</option><option value="12">12 meses</option><option value="0">Sem fim</option></select><button class="btn pri" id="aa">Ativar plano</button></div></div>
-  <div id="al" class="card" style="padding:6px 18px;margin-top:12px"><p class="mu" style="padding:12px 0"><span class="spin"></span></p></div></div>`;
-  const now = new Date().toISOString().slice(0, 10);
-  const draw = rows => { $('#al').innerHTML = rows.length ? `<table class="tb"><thead><tr><th>E-mail</th><th>Plano</th><th>Até</th><th></th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.email)}</td><td><span class="tag ${r.plan === 'pro' ? 'p' : ''}">${r.plan === 'pro' ? 'PRO' : 'BÁSICO'}</span></td><td>${r.until ? `<span style="color:${r.until < now ? 'var(--red)' : 'inherit'}">${new Date(r.until).toLocaleDateString('pt-PT')}${r.until < now ? ' · expirou' : ''}</span>` : '—'}</td><td style="text-align:right;white-space:nowrap"><button class="btn sm" data-ren="${esc(r.email)}" data-pl="${r.plan}">+1 mês</button> <button class="btn sm ghost" data-rm="${esc(r.email)}" style="color:var(--red)">Remover</button></td></tr>`).join('')}</tbody></table>` : '<p class="mu" style="padding:12px 0">Ainda sem assinantes.</p>'; bind(); };
-  const call = async (data, msg) => { try { draw((await api('admin', data)).rows); if (msg) toast(msg); } catch (e) { toast(e.message, true); } };
-  const bind = () => {
-    $$('[data-rm]').forEach(b => b.onclick = () => confirm('Remover o acesso de ' + b.dataset.rm + '?') && call({ action: 'remove', email: b.dataset.rm }, 'Removido'));
-    $$('[data-ren]').forEach(b => b.onclick = () => call({ email: b.dataset.ren, plan: b.dataset.pl, months: 1 }, 'Renovado +1 mês ✓'));
+  $('#view').innerHTML = `<div class="page">${head('Acessos de clientes', '<button class="btn pri" id="naB">Novo acesso</button>', 'Quando um cliente paga na Kursinha, cria-lhe o acesso aqui e envia o link. Todos os meses, ao pagar, clica em "+1 mês".')}
+  <div class="filters"><div class="sin">${ic('search', 16)}<input class="in" id="aq" placeholder="Procurar por email ou nome..."></div><select class="in" id="af" style="width:auto"><option value="">Todos</option><option value="active">Ativos</option><option value="expired">Expirados</option><option value="canceled">Cancelados</option><option value="pending">Sem conta criada</option></select></div>
+  <div class="kpis small" id="ak"></div>
+  <div id="al" class="card" style="padding:4px 16px;margin-top:12px;overflow-x:auto"><p class="mu" style="padding:12px 0"><span class="spin"></span></p></div></div>`;
+  let rows = [], roles = {};
+  const fmt = d => d ? new Date(d).toLocaleDateString('pt-PT') : '—';
+  const stTag = r => ({ active: '<span class="tag g">Ativo</span>', expired: '<span class="tag r">Expirado</span>', canceled: '<span class="tag">Cancelado</span>' })[r.status] || `<span class="tag">${esc(r.status)}</span>`;
+  const draw = () => {
+    const q = $('#aq').value.trim().toLowerCase(), f = $('#af').value;
+    const list = rows.filter(r => (!q || (r.email + ' ' + (r.full_name || '') + ' ' + (r.username || '')).toLowerCase().includes(q)) && (!f || (f === 'pending' ? !r.has_account : r.status === f)));
+    $('#ak').innerHTML = `<div class="kpi"><small>Clientes</small><b>${rows.length}</b></div><div class="kpi"><small>Ativos</small><b style="color:var(--won)">${rows.filter(r => r.status === 'active').length}</b></div><div class="kpi"><small>Expirados</small><b style="color:var(--red)">${rows.filter(r => r.status === 'expired').length}</b></div><div class="kpi"><small>Pro</small><b>${rows.filter(r => r.plan_id === 'pro').length}</b></div><div class="kpi"><small>Básico</small><b>${rows.filter(r => r.plan_id === 'basic').length}</b></div>`;
+    $('#al').innerHTML = list.length ? `<table class="tb"><thead><tr><th>Cliente</th><th>Plano</th><th>Estado</th><th>Válido até</th><th>Conta</th><th></th></tr></thead><tbody>${list.map(r => `<tr>
+      <td><b>${esc(r.full_name || r.email)}</b><br><small class="mu">${esc(r.email)}${r.username ? ' · @' + esc(r.username) : ''}${roles[r.email] === 'staff' ? ' · <span class="tag p">Equipa</span>' : ''}</small></td>
+      <td>${esc(PLN[r.plan_id] || r.plan_id)}</td><td>${stTag(r)}</td><td>${fmt(r.current_period_end)}</td><td>${r.has_account ? 'Criada' : '<span class="mu">Convite pendente</span>'}</td>
+      <td style="text-align:right;white-space:nowrap"><button class="btn sm" data-ren="${esc(r.email)}">+1 mês</button> <button class="btn sm ghost" data-lk="${esc(r.email)}">Novo link</button> <button class="btn sm ghost" data-more="${esc(r.email)}" aria-label="Mais">⋯</button></td></tr>`).join('')}</tbody></table>`
+      : `<div class="empty" style="padding:40px 10px"><p>${rows.length ? 'Nenhum cliente com este filtro.' : 'Ainda sem clientes. Quando alguém pagar, clica em "Novo acesso".'}</p></div>`;
+    $$('[data-ren]').forEach(b => b.onclick = async () => { b.disabled = true; try { const r = await droplyDB.renewAccess(b.dataset.ren); toast('Renovado até ' + fmt(r.valid_until) + ' ✓'); reload(); } catch (e) { toast(e.message, true); b.disabled = false; } });
+    $$('[data-lk]').forEach(b => b.onclick = async () => { b.disabled = true; try { const r = await droplyDB.newLink(b.dataset.lk); const row = rows.find(x => x.email === b.dataset.lk); accessResult({ ...r, plan: row?.plan_id, valid_until: row?.current_period_end }, 'Novo link de acesso'); } catch (e) { toast(e.message, true); } b.disabled = false; });
+    $$('[data-more]').forEach(b => b.onclick = e => { const em = b.dataset.more, staff = roles[em] === 'staff';
+      const d = pop(e.currentTarget, `<a href="javascript:void 0" class="pi" data-x="cancel" style="color:var(--red)">${ic('ban')}Cancelar acesso</a>${ME.role === 'admin' && roles[em] !== 'admin' ? `<a href="javascript:void 0" class="pi" data-x="role">${ic('key')}${staff ? 'Remover da equipa' : 'Tornar equipa'}</a>` : ''}`);
+      $('[data-x="cancel"]', d).onclick = async () => { closePop(); if (!confirm('Cancelar o acesso de ' + em + '? O cliente deixa de poder editar.')) return; try { await droplyDB.cancelAccess(em); toast('Acesso cancelado'); reload(); } catch (x) { toast(x.message, true); } };
+      $('[data-x="role"]', d) && ($('[data-x="role"]', d).onclick = async () => { closePop(); try { await droplyDB.setRole(em, staff ? 'user' : 'staff'); toast(staff ? 'Removido da equipa' : 'Agora faz parte da equipa ✓'); reload(); } catch (x) { toast(x.message, true); } }); });
   };
-  try { draw((await api('admin')).rows); } catch (e) { $('#al').innerHTML = `<p class="note" style="margin:12px 0">${esc(e.message)}</p>`; }
-  $('#aa').onclick = () => { call({ email: $('#ae').value, plan: $('#ap').value, months: $('#am').value }, 'Plano ativado ✓'); $('#ae').value = ''; };
+  const reload = async () => {
+    try { rows = await droplyDB.listClients(); const p = await droplyDB.sb.from('profiles').select('email,role'); roles = Object.fromEntries((p.data || []).map(x => [x.email, x.role])); draw(); }
+    catch (e) { $('#al').innerHTML = `<p class="note" style="margin:12px 0">${esc(e.message)}</p>`; }
+  };
+  $('#aq').oninput = draw; $('#af').onchange = draw;
+  $('#naB').onclick = () => {
+    const m = modal(`<div class="h" style="font-size:22px">Novo acesso</div><p class="mu" style="margin-top:6px">Usa o email com que o cliente pagou na Kursinha. Se já tiver conta, o plano é renovado por mais 1 mês.</p>
+    <label class="lb">Email do cliente</label><input class="in" id="nE" type="email" placeholder="cliente@email.com">
+    <label class="lb">Nome</label><input class="in" id="nN" placeholder="Nome do cliente">
+    <label class="lb">Plano</label><div class="stages" id="nP"><button data-p="basic" class="on">Básico · ${kz(CFG.plans?.basico?.price)}</button><button data-p="pro">Pro · ${kz(CFG.plans?.pro?.price)}</button></div>
+    <div class="row-acts" style="margin-top:16px"><button class="btn pri" id="nG">Criar acesso e gerar link</button></div>`, 'dialog');
+    let plan = 'basic'; $$('#nP button', m).forEach(b => b.onclick = () => { plan = b.dataset.p; $$('#nP button', m).forEach(x => x.classList.toggle('on', x === b)); });
+    $('#nE', m).focus();
+    $('#nG', m).onclick = async () => { const b = $('#nG', m); b.disabled = true; b.innerHTML = '<span class="spin"></span>';
+      try { const r = await droplyDB.createAccess($('#nE', m).value.trim(), plan, $('#nN', m).value.trim()); accessResult(r, 'Acesso criado ✓'); reload(); }
+      catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'Criar acesso e gerar link'; } };
+  };
+  reload();
 }
 
 /* ================= PLANOS E CHECKOUT ================= */
@@ -1132,17 +1244,13 @@ function plansHTML(cur) {
    ${cur === k ? '<button class="btn" disabled>O teu plano atual</button>' : `<button class="btn ${k === 'pro' ? 'pri' : ''}" data-buy="${k}">Escolher ${p.name}</button>`}</div>`; }).join('')}</div>`;
 }
 function payModal(k) {
-  const p = CFG.plans[k], url = CFG.checkout?.[k];
-  if (url) { window.open(url, '_blank', 'noopener'); }
-  const msg = `Olá! Quero ativar o plano ${p.name} do droply (${kz(p.price)}/mês).\nConta Google: ${ME.email}\nSegue o comprovativo.`;
-  const methods = String(CFG.payMethods || '').split('|').map(x => x.trim()).filter(Boolean);
+  const p = CFG.plans[k], url = (ME?.lastPlan === k && ME?.renewUrl) || CFG.checkout?.[k];
+  if (url) window.open(url, '_blank', 'noopener');
+  const msg = `Olá! Paguei o plano ${p.name} do droply (${kz(p.price)}/mês).\nEmail: ${ME?.email || ''}\nSegue o comprovativo.`;
   modal(`<div class="h" style="font-size:22px">Plano ${p.name} · ${kz(p.price)}/mês</div>
-  ${url ? '<p class="mu" style="margin-top:6px">Abrimos o checkout numa nova janela. Paga lá e o acesso é ativado neste e-mail Google.</p>' : '<p class="mu" style="margin-top:6px">Paga por um destes meios e envia o comprovativo. Ativamos o plano neste e-mail Google, normalmente em poucas horas.</p>'}
-  ${methods.map(m => { const [n, ...v] = m.split(':'); return `<div class="paym"><div><small>${esc(v.length ? n : 'Pagamento')}</small><b>${esc(v.length ? v.join(':').trim() : n)}</b></div><button class="btn sm" data-cp="${esc(v.length ? v.join(':').trim() : n)}">Copiar</button></div>`; }).join('')}
-  ${!url && !methods.length ? '<p class="note" style="margin-top:12px">Fala com o suporte para receber os dados de pagamento.</p>' : ''}
-  <p class="mu2" style="font-size:12.5px;margin-top:12px">Conta: <b>${esc(ME.email)}</b></p>
-  <div class="row-acts" style="margin-top:12px">${url ? `<a class="btn pri" href="${esc(url)}" target="_blank" rel="noopener">Abrir checkout</a>` : ''}${CFG.supportWhatsApp ? `<a class="btn wa" href="https://wa.me/${CFG.supportWhatsApp}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Enviar comprovativo no WhatsApp</a>` : ''}${CFG.supportEmail ? `<a class="btn" href="mailto:${esc(CFG.supportEmail)}?subject=${encodeURIComponent('Ativar droply ' + p.name)}&body=${encodeURIComponent(msg)}">Por e-mail</a>` : ''}</div>`, 'dialog');
-  $$('#modal [data-cp]').forEach(b => b.onclick = () => copy(b.dataset.cp));
+  <p class="mu" style="margin-top:6px">Abrimos o checkout seguro da Kursinha numa nova janela. Paga por Multicaixa Express ou referência, com o email <b>${esc(ME?.email || '')}</b>.</p>
+  <p class="mu" style="margin-top:8px">Assim que o pagamento for confirmado, ativamos o teu plano por 30 dias.</p>
+  <div class="row-acts" style="margin-top:14px">${url ? `<a class="btn pri" href="${esc(url)}" target="_blank" rel="noopener">Abrir checkout</a>` : ''}${CFG.supportWhatsApp ? `<a class="btn wa" href="https://wa.me/${CFG.supportWhatsApp}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Já paguei · enviar comprovativo</a>` : ''}</div>`, 'dialog');
 }
 function viewPlans() {
   $('#view').innerHTML = `<div class="page" style="max-width:900px">${head('Planos', '', 'Muda de plano quando quiseres. O Pro desbloqueia o Estúdio IA e o número internacional.')}${plansHTML(ME.admin ? '' : ME.plan)}</div>`;
@@ -1153,14 +1261,21 @@ function viewPlans() {
 async function start() {
   try {
     ME = await api('me');
-    if (!ME.allowed) { renderNoAccess(); const want = sessionStorage.getItem('droply:plan'); if (want && CFG.plans?.[want]) { sessionStorage.removeItem('droply:plan'); payModal(want); } return; }
-    load(); shell(); route(); askCurrency();
-  } catch (e) { if (TOKEN) renderLogin(e.message); }
+    if (!ME.allowed && !ME.lastPlan && !ME.staff) return renderNoAccess();
+    READONLY = !ME.allowed && !ME.staff;
+    $('#root').innerHTML = `<div class="boot"><img src="/assets/logo.svg" alt="" width="56" height="56"></div>`;
+    await load();
+    if (!READONLY) { try { if (await droplyDB.migrateLocal(ME.email)) { await load(); toast('Os dados que tinhas neste navegador foram guardados na tua conta ✓'); } } catch (e) { console.warn(e); } }
+    shell(); route(); renewBanner(); if (!READONLY) askCurrency();
+  } catch (e) { renderLogin(e.message); }
 }
 (async function boot() {
-  try { const pl = new URLSearchParams(location.search).get('plano'); if (pl) { sessionStorage.setItem('droply:plan', pl); history.replaceState(null, '', location.pathname + location.hash); } } catch {}
   try { CFG = await (await fetch('/api/config')).json(); } catch { CFG = {}; }
-  try { TOKEN = localStorage.getItem('droply:token'); } catch {}
-  if (TOKEN && tokenValid(TOKEN)) { initGoogle(); return start(); }
-  TOKEN = null; renderLogin();
+  CFG.checkout ||= { basico: 'https://pay.kursinha.com/c/6aee66b44dd62fd0ef866765', pro: 'https://pay.kursinha.com/c/6a85f558a1f75adb595a9a73' };
+  let r = null; try { r = await droplyDB.handleAuthRedirect(); } catch (e) { r = { error: e.message }; }
+  const sess = await droplyDB.session();
+  if (!sess) return renderLogin(r?.error ? 'Este link já não é válido (' + r.error + '). Pede um novo link ao suporte.' : '');
+  if (r?.type) return renderCreateAccount();
+  afterAuth();
+  droplyDB.onAuth(ev => { if (ev === 'SIGNED_OUT' && ME) { ME = null; renderLogin(''); } });
 })();
