@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Checkout · droply</title><meta name="robots" content="noindex">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--gr:linear-gradient(135deg,#FF8A3D,#FF3D8B 50%,#8B5CFF)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{min-height:100vh;background:#F6F4F9;color:#16111F;font:400 15px/1.55 Inter,system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;padding:30px 16px}
+.card{width:min(520px,100%);background:#fff;border-radius:24px;box-shadow:0 20px 60px rgba(22,17,31,.12);overflow:hidden}
+.top{background:#0A0710;color:#fff;padding:26px 26px 22px;position:relative;overflow:hidden}
+.top:before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse 60% 90% at 90% 120%,rgba(255,61,139,.6),transparent 70%),radial-gradient(ellipse 50% 70% at 0% 130%,rgba(255,138,61,.5),transparent 70%)}
+.top>*{position:relative}.seller{font-size:13px;color:#C9C2D6}
+h1{font:800 26px/1.15 "Plus Jakarta Sans";letter-spacing:-.03em;margin-top:6px}
+.price{font:800 38px "Plus Jakarta Sans";letter-spacing:-.04em;margin-top:12px}
+.body{padding:22px 26px}
+.desc{color:#4A4356}ul{list-style:none;margin:12px 0}li{padding:5px 0 5px 26px;position:relative}li:before{content:"✓";position:absolute;left:0;color:#FF3D8B;font-weight:800}
+h2{font:800 16px "Plus Jakarta Sans";margin:18px 0 10px}
+.m{border:1px solid #E7E2EE;border-radius:14px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px}
+.m b{display:block;font-size:13px}.m span{font:500 14px/1.4 ui-monospace,Menlo,monospace;word-break:break-all}
+.m button,.m a{margin-left:auto;flex:none;border:1px solid #E7E2EE;background:#fff;border-radius:999px;padding:6px 12px;font:600 13px Inter;cursor:pointer;text-decoration:none;color:#16111F}
+.m a{background:var(--gr);color:#fff;border:0}
+.btn{display:flex;justify-content:center;align-items:center;gap:8px;width:100%;border:0;border-radius:999px;padding:15px;font:800 16px "Plus Jakarta Sans";color:#fff;background:#1FAF5A;text-decoration:none;margin-top:8px;cursor:pointer}
+.btn.alt{background:#16111F}
+.note{font-size:12.5px;color:#7C7489;margin-top:12px;text-align:center}
+.foot{margin-top:18px;font-size:12px;color:#7C7489;display:flex;align-items:center;gap:6px}
+.err{padding:40px;text-align:center}
+</style></head>
+<body>
+<div class="card" id="c"></div>
+<div class="foot"><img src="/assets/logo.svg" width="16" height="16" alt="">Checkout criado com <a href="/" style="color:inherit">droply</a></div>
+<script>
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const N={iban:'Transferência bancária (IBAN)',mcx:'Multicaixa Express',mpesa:'M-Pesa / e-Mola',pix:'Pix',paypal:'PayPal',stripe:'Cartão (Stripe)',wise:'Wise',payoneer:'Payoneer',outro:'Outro'};
+let d=null;try{const h=location.hash.slice(1).replace(/-/g,'+').replace(/_/g,'/');d=JSON.parse(decodeURIComponent(escape(atob(h))))}catch(e){}
+const c=document.getElementById('c');
+if(!d||!d.p){c.innerHTML='<div class="err"><h1>Link inválido</h1><p class="desc">Pede um novo link a quem te enviou.</p></div>'}else{
+ const p=d.p;let price;try{price=Number(p.v).toLocaleString('pt-PT',{style:'currency',currency:p.c})}catch(e){price=p.v+' '+p.c}
+ const isLink=v=>/^https?:\/\//.test(v);
+ const m=Object.entries(d.m||{}).map(([k,v])=>`<div class="m"><div><b>${esc(N[k]||k)}</b><span>${esc(v)}</span></div>${isLink(v)?`<a href="${esc(v)}" target="_blank" rel="noopener">Pagar</a>`:`<button data-c="${esc(v)}">Copiar</button>`}</div>`).join('');
+ const msg=`Olá! Fiz o pagamento de "${p.n}" (${price}). Segue o comprovativo.`;
+ c.innerHTML=`<div class="top"><div class="seller">${esc(d.s||'')}</div><h1>${esc(p.n)}</h1><div class="price">${price}</div></div>
+ <div class="body">${p.d?`<p class="desc">${esc(p.d)}</p>`:''}${(p.b||[]).length?`<ul>${p.b.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
+ <h2>Como pagar</h2>${m||'<p class="desc">Fala com o vendedor para combinar o pagamento.</p>'}
+ <h2>Depois de pagar</h2>
+ ${d.w?`<a class="btn" href="https://wa.me/${esc(d.w)}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Enviar comprovativo no WhatsApp</a>`:''}
+ ${d.e?`<a class="btn alt" href="mailto:${esc(d.e)}?subject=${encodeURIComponent('Pagamento: '+p.n)}&body=${encodeURIComponent(msg)}">Enviar comprovativo por e-mail</a>`:''}
+ <p class="note">O pagamento é feito diretamente a ${esc(d.s||'o vendedor')}. Guarda o comprovativo.</p></div>`;
+ document.title=p.n+' · Checkout';
+ c.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{navigator.clipboard.writeText(b.dataset.c).then(()=>{b.textContent='Copiado ✓'})});
+}
+</script>
+</body></html>
