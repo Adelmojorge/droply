@@ -11,8 +11,11 @@ const today0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.ge
 const fmtDate = d => new Date(d).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
 const fmtDT = d => new Date(d).toLocaleString('pt-PT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 const phoneDigits = p => String(p || '').replace(/[^\d]/g, '');
-const money = (v, c = 'EUR') => { const n = Number(v) || 0; try { return n.toLocaleString('pt-PT', { style: 'currency', currency: c, maximumFractionDigits: n % 1 ? 2 : 0 }); } catch { return n.toLocaleString('pt-PT') + ' ' + c; } };
-const CURRENCIES = ['EUR', 'USD', 'BRL', 'AOA', 'MZN', 'GBP'];
+const money = (v, c) => { const n = Number(v) || 0; c ||= DB?.profile?.currency; if (!c) return n.toLocaleString('pt-PT'); try { return n.toLocaleString('pt-PT', { style: 'currency', currency: c, maximumFractionDigits: n % 1 ? 2 : 0 }); } catch { return n.toLocaleString('pt-PT') + ' ' + c; } };
+const CURRENCIES = ['AOA', 'MZN', 'USD', 'EUR', 'BRL', 'GBP', 'CVE', 'ZAR', 'CAD', 'CHF', 'XOF', 'XAF', 'NGN', 'KES'];
+const CUR_NAMES = { AOA: 'Kwanza (Angola)', MZN: 'Metical (Moçambique)', USD: 'Dólar americano', EUR: 'Euro', BRL: 'Real (Brasil)', GBP: 'Libra esterlina', CVE: 'Escudo (Cabo Verde)', ZAR: 'Rand (África do Sul)', CAD: 'Dólar canadiano', CHF: 'Franco suíço', XOF: 'Franco CFA (Oeste)', XAF: 'Franco CFA (Central)', NGN: 'Naira (Nigéria)', KES: 'Xelim (Quénia)' };
+const kz = v => String(Math.round(Number(v || 0))).replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' Kz';
+const isPro = () => ME?.plan === 'pro' || ME?.admin;
 const slug = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'site';
 
 /* ---------------- funis e sequências pré-feitos ---------------- */
@@ -55,7 +58,6 @@ function load() {
   try { DB = JSON.parse(localStorage.getItem(KEY())) || {}; } catch { DB = {}; }
   DB.leads ||= {}; DB.searches ||= []; DB.sites ||= {}; DB.profile ||= {}; DB.gh ||= null;
   DB.sequences ||= []; DB.sales ||= []; DB.products ||= []; DB.pay ||= {}; DB.studio ||= [];
-  DB.profile.currency ||= 'EUR';
   for (const l of Object.values(DB.leads)) { l.funnel ||= 'servicos'; l.status ||= 'novo'; l.activities ||= []; if (!l.temp && l.analysis?.temperature) l.temp = l.analysis.temperature; }
   for (const s of Object.values(DB.sites)) s.leadId ??= null;
 }
@@ -96,6 +98,7 @@ async function api(path, data, retry = true) {
   const r = await fetch('/api/' + path, { method: data ? 'POST' : 'GET', headers: { Authorization: 'Bearer ' + TOKEN, ...(data ? { 'Content-Type': 'application/json' } : {}) }, body: data ? JSON.stringify(data) : undefined });
   const j = await r.json().catch(() => ({ error: 'Resposta inválida do servidor.' }));
   if (r.status === 401 && retry) { const t = await reauth(); if (t) return api(path, data, false); logout(true); }
+  if (r.status === 402 && j.code === 'no_plan') { ME = { ...ME, allowed: false, plan: null }; renderNoAccess(); }
   if (!r.ok) throw new Error(j.error || 'Erro ' + r.status);
   return j;
 }
@@ -126,17 +129,17 @@ function renderLogin(msg = '') {
   initGoogle();
 }
 function renderNoAccess() {
-  const wa = CFG.supportWhatsApp ? `https://wa.me/${CFG.supportWhatsApp}?text=${encodeURIComponent('Olá! Quero ativar o droply na conta ' + ME.email)}` : '';
-  $('#root').innerHTML = `<div class="login"><div class="box">
-  <div style="display:flex;justify-content:center">${logo(64)}</div>
-  <div class="h" style="font-size:36px">Falta só ativar <span class="gt">o teu acesso.</span></div>
-  <p>Entraste como <b>${esc(ME.email)}</b>. Esta conta ainda não tem uma subscrição ativa do droply.</p>
-  <div style="display:flex;gap:10px;justify-content:center;margin-top:26px;flex-wrap:wrap">
-   ${CFG.checkoutUrl ? `<a class="btn pri" href="${esc(CFG.checkoutUrl)}" target="_blank" rel="noopener">Ativar o droply</a>` : ''}
-   ${wa ? `<a class="btn" href="${wa}" target="_blank" rel="noopener">Já paguei · falar com o suporte</a>` : ''}
-   <button class="btn ghost" id="out">Usar outra conta</button></div>
-  <small>Depois do pagamento, o acesso é ativado no e-mail Google que usaste aqui.</small></div></div>`;
+  const first = (ME.name || '').split(' ')[0];
+  $('#root').innerHTML = `<div class="login plansp"><div class="box wide">
+  <div style="display:flex;justify-content:center">${logo(56)}</div>
+  <div class="h" style="font-size:clamp(30px,5vw,42px)">${ME.expired ? 'A tua assinatura expirou' : `Bem-vindo${first ? ', ' + esc(first) : ''}!`}<br><span class="gt">Escolhe o teu plano.</span></div>
+  <p>Entraste como <b>${esc(ME.email)}</b>. Escolhe um plano para começar a encontrar clientes com o droply.</p>
+  ${plansHTML('')}
+  <div style="display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap">${CFG.supportWhatsApp ? `<a class="btn" href="https://wa.me/${CFG.supportWhatsApp}?text=${encodeURIComponent('Olá! Já paguei o droply. Conta: ' + ME.email)}" target="_blank" rel="noopener">Já paguei · falar com o suporte</a>` : ''}<button class="btn" id="rf">Já ativaram · entrar</button><button class="btn ghost" id="out">Usar outra conta</button></div>
+  <small>Pagamento mensal em kwanzas. Cancela quando quiseres. O acesso é ativado no e-mail Google com que entraste.</small></div></div>`;
+  $$('[data-buy]').forEach(b => b.onclick = () => payModal(b.dataset.buy));
   $('#out').onclick = () => logout();
+  $('#rf').onclick = () => start();
 }
 
 /* ---------------- shell ---------------- */
@@ -155,22 +158,18 @@ function shell() {
   $('#root').innerHTML = `<div class="app">
   <aside class="side" id="side">
    <a class="brand" href="#/">${logo(26)}<b>droply</b></a>
-   <div class="acct">${pic}<div><b>${esc(ME.name || ME.email)}</b><small>${esc(ME.email)}</small></div></div>
+   <a class="acct" href="#/definicoes">${pic}<div><b>${esc(ME.name || ME.email)}</b><small>${ME.admin ? 'Admin · ilimitado' : 'Plano ' + esc(ME.planInfo?.name || '')}${ME.until ? ' · até ' + fmtDate(ME.until) : ''}</small></div><span class="gear">⚙</span></a>
    <nav class="nav">
-    <a href="#/" data-r="home">◧ Painel</a>
-    <a href="#/procurar" data-r="procurar">✦ Encontrar clientes</a>
-    <a href="#/crm" data-r="crm">◎ CRM <span class="cnt">${n}</span></a>
-    <a href="#/pipeline" data-r="pipeline">▤ Pipeline e funis</a>
-    <a href="#/followups" data-r="followups">↻ Follow-ups ${due ? `<span class="cnt hot">${due}</span>` : ''}</a>
-    <a href="#/sites" data-r="sites">▣ Sites com IA <span class="cnt">${s}</span></a>
-    <a href="#/estudio" data-r="estudio">🎬 Estúdio IA</a>
-    <a href="#/vendas" data-r="vendas">€ Vendas e checkout</a>
-    <a href="#/numeros" data-r="numeros">☎ Números internacionais</a>
-    <a href="#/definicoes" data-r="definicoes">⚙ Definições</a>
-    ${ME.admin ? '<a href="#/admin" data-r="admin">🔑 Acessos (admin)</a>' : ''}
+    <a href="#/" data-r="home">✦ Encontrar clientes</a>
+    <a href="#/dashboard" data-r="dashboard">◧ Dashboard</a>
+    <a href="#/crm" data-r="clientes">◎ Clientes ${due ? `<span class="cnt hot">${due}</span>` : `<span class="cnt">${n}</span>`}</a>
+    <a href="#/sites" data-r="sites">▣ Sites <span class="cnt">${s}</span></a>
+    <a href="#/estudio" data-r="estudio">🎬 Estúdio IA ${isPro() ? '' : '<span class="cnt pro">PRO</span>'}</a>
+    <a href="#/vendas" data-r="vendas">€ Vendas</a>
    </nav>
-   <h6>Pesquisas guardadas</h6>
+   <h6>Pesquisas recentes</h6>
    <div class="saved">${DB.searches.slice(0, 6).map(x => `<a data-sid="${x.id}"><i>${esc(x.label[0] || '?')}</i><span>${esc(x.label)}</span></a>`).join('') || '<span class="mu2" style="font-size:12.5px;padding:0 10px">Ainda nenhuma.</span>'}</div>
+   <a class="num" href="#/numeros"><div><b>${isPro() ? 'O teu número grátis' : 'Número internacional'}</b><small>${isPro() ? 'Pede já o teu número de qualquer país' : 'Incluído no plano Pro'}</small></div><i>☎</i></a>
    <div class="quota" id="quota"></div>
   </aside>
   <main class="main"><div class="scroll" id="view"></div></main></div>`;
@@ -180,7 +179,7 @@ function shell() {
 function renderQuota() {
   const q = $('#quota'); if (!q || !ME?.usage) return;
   const row = (k, t) => { const u = ME.usage[k]; if (!u) return ''; const pct = Math.min(100, u.used / Math.max(1, u.limit) * 100); return `<div class="r"><span>${t}</span><span>${u.used}/${u.limit}</span></div><div class="bar"><i style="width:${pct}%"></i></div>`; };
-  q.innerHTML = `<b style="font-size:12.5px">Este mês</b>${row('search', 'Pesquisas')}${row('analyze', 'Análises')}${row('site', 'Sites')}${row('studio', 'Estúdio IA')}${ME.limitsActive === false && ME.admin ? '<div class="mu2" style="margin-top:6px">Limites desligados (falta KV)</div>' : ''}`;
+  q.innerHTML = `<b style="font-size:12.5px">Este mês${ME.admin ? ' · admin' : ''}</b>${row('search', 'Pesquisas')}${row('analyze', 'Análises')}${row('site', 'Sites')}${isPro() ? row('studio', 'Estúdio IA') : ''}${!isPro() ? '<a class="btn sm pri" href="#/planos" style="width:100%;margin-top:10px">Passar para o Pro</a>' : ''}${ME.admin ? '<a class="mu2" href="#/admin" style="display:block;margin-top:8px;font-size:12px">🔑 Gerir assinaturas</a>' : ''}${ME.limitsActive === false && ME.admin ? '<div class="mu2" style="margin-top:6px">Limites desligados (falta KV)</div>' : ''}`;
 }
 
 /* ---------------- router ---------------- */
@@ -190,20 +189,34 @@ function route() {
   const [path, qs] = h.split('?');
   const parts = path.split('/').filter(Boolean);
   const r = parts[0] || 'home';
-  if (r !== 'lead' && !$('#modal').hidden) { $('#modal').hidden = true; $('#modal').innerHTML = ''; }
-  const nav = { lead: 'crm', site: 'sites', leads: 'crm' }[r] || r;
+  if (r !== 'lead' && !$('#modal').hidden && DB?.profile?.currency) { $('#modal').hidden = true; $('#modal').innerHTML = ''; }
+  const nav = { lead: 'clientes', site: 'sites', leads: 'clientes', crm: 'clientes', pipeline: 'clientes', followups: 'clientes', procurar: 'home' }[r] || r;
   $$('.nav a').forEach(a => a.classList.toggle('on', a.dataset.r === nav));
   $('#side')?.classList.remove('open');
   $('#view').scrollTop = 0;
   const q = new URLSearchParams(qs || '');
-  const V = { home: viewHome, procurar: viewSearch, crm: viewCRM, leads: viewCRM, pipeline: viewPipeline, followups: viewFollowups, sites: () => viewSites(q), estudio: () => viewStudio(parts[1]), vendas: () => viewSales(parts[1]), numeros: viewNumbers, definicoes: viewSettings };
-  if (r === 'lead') { viewCRM(); return openLead(parts[1]); }
+  const V = { home: viewSearch, dashboard: viewHome, planos: viewPlans, procurar: viewSearch, crm: viewCRM, leads: viewCRM, pipeline: viewPipeline, followups: viewFollowups, sites: () => viewSites(q), estudio: () => viewStudio(parts[1]), vendas: () => viewSales(parts[1]), numeros: viewNumbers, definicoes: viewSettings };
+  if (['crm', 'leads', 'pipeline', 'followups'].includes(r)) { V[r](); return clientTabs(r === 'leads' ? 'crm' : r); }
+  if (r === 'lead') { viewCRM(); clientTabs('crm'); return openLead(parts[1]); }
   if (r === 'site') return viewSite(parts[1]);
   if (r === 'admin' && ME.admin) return viewAdmin();
   if (V[r]) return V[r]();
   location.hash = '#/';
 }
 window.addEventListener('hashchange', route);
+function clientTabs(on) {
+  const t = $('#view .top'); if (!t) return;
+  t.insertAdjacentHTML('afterend', `<div class="tabs big">${[['crm', 'Lista'], ['pipeline', 'Funil'], ['followups', 'Follow-ups']].map(([k, n]) => `<a href="#/${k}" class="${k === on ? 'on' : ''}">${n}${k === 'followups' && dueSteps().length ? ` <span class="cnt hot">${dueSteps().length}</span>` : ''}</a>`).join('')}</div>`);
+}
+/* moeda: o utilizador escolhe (nunca automático) */
+function askCurrency(force = false) {
+  if (DB.profile.currency && !force) return;
+  const m = modal(`<div style="text-align:center">${logo(44)}</div><div class="h" style="font-size:24px;text-align:center;margin-top:12px">Em que moeda trabalhas?</div>
+  <p class="mu" style="text-align:center;margin-top:6px">Usamos esta moeda no Dashboard, nas vendas e nos checkouts. Podes mudar depois nas Definições, e cada lead ou venda pode ter outra moeda.</p>
+  <div class="curgrid">${CURRENCIES.map(c => `<button data-cur="${c}"><b>${c}</b><small>${CUR_NAMES[c]}</small></button>`).join('')}</div>`, 'dialog');
+  m.onclick = null;
+  $$('[data-cur]', m).forEach(b => b.onclick = () => { DB.profile.currency = b.dataset.cur; for (const l of Object.values(DB.leads)) l.currency ||= b.dataset.cur; save(); closeModal(); toast('Moeda: ' + b.dataset.cur + ' ✓'); route(); });
+}
 
 /* ================= PAINEL ================= */
 function salesStats() {
@@ -226,7 +239,7 @@ function viewHome() {
   const hot = Object.values(DB.leads).filter(l => l.temp === 'quente' && !isWon(l) && !isLost(l)).slice(0, 6);
   const acts = Object.values(DB.leads).flatMap(l => (l.activities || []).map(a => ({ ...a, l }))).sort((a, b) => b.at - a.at).slice(0, 8);
   const calls = Object.values(DB.leads).reduce((a, l) => a + (l.activities || []).filter(x => x.t === 'call').length, 0);
-  $('#view').innerHTML = `<div class="page">${head(`Olá${first ? ', ' + esc(first) : ''} 👋`, '<a class="btn pri" href="#/procurar">Encontrar clientes ✦</a>', 'O teu negócio de IA num só lugar.')}
+  $('#view').innerHTML = `<div class="page">${head('Dashboard', '<a class="btn pri" href="#/">Encontrar clientes ✦</a>', `Olá${first ? ', ' + esc(first) : ''}. Os números do teu negócio${st.cur ? ' em ' + st.cur : ''}.`)}
   <div class="kpis">
    <div class="kpi"><small>Receita total</small><b>${money(st.total, st.cur)}</b><span>${Object.entries(st.other).map(([c, v]) => '+ ' + money(v, c)).join(' ') || 'vendas pagas'}</span></div>
    <div class="kpi"><small>Este mês</small><b class="gt">${money(st.month, st.cur)}</b><span>${new Date().toLocaleDateString('pt-PT', { month: 'long' })}</span></div>
@@ -246,7 +259,7 @@ function viewHome() {
    <div class="card pad"><div class="ch3">Atividade recente <span class="mu2" style="font-size:12px">${calls} chamadas registadas</span></div>
     ${acts.map(a => `<a class="li" href="#/lead/${a.l.id}"><span>${({ call: '📞', wa: '💬', email: '✉️', note: '📝', stage: '➜', seq: '↻', sale: '€' })[a.t] || '•'}</span><div><b>${esc(a.l.name)}</b><small>${esc(a.text)} · ${fmtDT(a.at)}</small></div></a>`).join('') || '<p class="mu" style="padding:10px 0">Ainda sem atividade.</p>'}</div>
   </div>
-  <div class="quick">${[['#/procurar', '✦', 'Encontrar clientes', 'Google Maps + IA'], ['#/sites?novo=1', '▣', 'Criar um site', 'Qualquer site, com IA'], ['#/estudio/influencer', '🎬', 'Criar influencer IA', 'Perfil, prompts, roteiros'], ['#/vendas/checkout', '€', 'Criar checkout', 'Link de pagamento']].map(([h, i, t, s]) => `<a class="card qa" href="${h}"><i>${i}</i><b>${t}</b><small>${s}</small></a>`).join('')}</div></div>`;
+  <div class="quick">${[['#/', '✦', 'Encontrar clientes', 'Google Maps + IA'], ['#/sites?novo=1', '▣', 'Criar um site', 'Qualquer site, com IA'], ['#/estudio/influencer', '🎬', 'Criar influencer IA', 'Perfil, prompts, roteiros'], ['#/vendas/checkout', '€', 'Criar checkout', 'Link de pagamento']].map(([h, i, t, s]) => `<a class="card qa" href="${h}"><i>${i}</i><b>${t}</b><small>${s}</small></a>`).join('')}</div></div>`;
 }
 
 /* ================= ENCONTRAR CLIENTES ================= */
@@ -261,6 +274,7 @@ function viewSearch() {
    <div class="sugg">${SUGG.map(s => `<span class="chip" data-s="${esc(s)}">${esc(s)}</span>`).join('')}</div>
   </div><div class="res" id="results">${SEARCH ? resultsHTML() : ''}</div></div>`;
   const q = $('#q');
+  try { const pre = localStorage.getItem('droply:q'); if (pre) { q.value = pre; localStorage.removeItem('droply:q'); q.focus(); } } catch {}
   q.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSearch(); } };
   $$('[data-add]').forEach(c => c.onclick = () => { q.value = (q.value.trim() + c.dataset.add).trim(); q.focus(); });
   $$('[data-s]').forEach(c => c.onclick = () => { q.value = c.dataset.s; doSearch(); });
@@ -294,7 +308,7 @@ async function loadMore() {
   try { const r = await api('search', { plan: s.plan, pageToken: s.next }); addLeads(r.leads, s); s.next = r.nextPageToken; save(); $('#results').innerHTML = resultsHTML(); bindResults(); refreshMe(); toast(`+${r.leads.length} empresas`); }
   catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'Carregar mais (1 pesquisa)'; }
 }
-function openSearch(id) { SEARCH = DB.searches.find(s => s.id === id); location.hash = '#/procurar'; route(); setTimeout(() => $('#results')?.scrollIntoView({ behavior: 'smooth' }), 50); }
+function openSearch(id) { SEARCH = DB.searches.find(s => s.id === id); location.hash = '#/'; route(); setTimeout(() => $('#results')?.scrollIntoView({ behavior: 'smooth' }), 50); }
 function leadTags(l) {
   const t = [];
   if (!l.website && l.source !== 'manual') t.push('<span class="tag p">SEM SITE</span>');
@@ -345,7 +359,7 @@ function rerender() {
 function viewCRM() {
   const L = Object.values(DB.leads), acts = L.flatMap(l => l.activities || []);
   const c = t => acts.filter(a => a.t === t).length;
-  $('#view').innerHTML = `<div class="page">${head('CRM', '<button class="btn sm" id="csv">Exportar CSV</button><button class="btn sm pri" id="addL">+ Novo lead</button>', 'Todos os teus contactos, o que fizeste com cada um e o próximo passo.')}
+  $('#view').innerHTML = `<div class="page">${head('Clientes', '<button class="btn sm" id="csv">Exportar CSV</button><button class="btn sm pri" id="addL">+ Novo lead</button>', 'Todos os teus contactos, o que fizeste com cada um e o próximo passo.')}
   <div class="kpis small">
    <div class="kpi"><small>Leads</small><b>${L.length}</b></div>
    <div class="kpi"><small>🔥 Quentes</small><b style="color:var(--warm)">${L.filter(l => l.temp === 'quente').length}</b></div>
@@ -723,6 +737,7 @@ const STUDIO = {
     ['servico', 'Serviço ou produto', 'Ex.: vídeos com IA para marcas de moda'], ['publico', 'Para quem', 'Ex.: lojas online nos EUA'], ['moeda', 'Moeda', 'USD'], ['diferencial', 'O teu diferencial', 'Ex.: entrega em 48 h, 10 vídeos por mês']] },
 };
 function viewStudio(tab) {
+  if (!isPro()) return upsell('🎬', 'O Estúdio IA é do plano Pro', 'Cria influenciadores de IA, roteiros virais, anúncios em vídeo e ofertas prontas a vender — com prompts para colar no Veo, Kling, Midjourney ou Google AI Studio.', ['Influencer de IA com cara consistente', 'Roteiros virais a partir de referências', 'Anúncios em vídeo com IA para negócios', 'Ofertas, pacotes e sequências com IA']);
   const k = STUDIO[tab] ? tab : null;
   if (!k) {
     $('#view').innerHTML = `<div class="page">${head('Estúdio IA', '', 'Cria influenciadores de IA, roteiros virais, anúncios e ofertas. O droply dá-te os prompts prontos a colar no Google AI Studio, Veo, Kling, Midjourney ou outra IA.')}
@@ -856,18 +871,22 @@ function salesMethods() {
 }
 
 /* ================= NÚMEROS ================= */
+function upsell(icon, title, text, items) {
+  $('#view').innerHTML = `<div class="page" style="max-width:640px">${head('')}<div class="card pad upsell"><i>${icon}</i><div class="h">${title}</div><p class="mu">${text}</p><ul class="ol">${items.map(x => `<li>${esc(x)}</li>`).join('')}</ul><a class="btn pri" href="#/planos">Passar para o Pro · ${kz(CFG.plans?.pro?.price)}/mês</a></div></div>`;
+}
 function viewNumbers() {
+  if (!isPro()) return upsell('☎', 'Número internacional grátis no Pro', 'Um número local passa confiança a clientes lá fora. No plano Pro recebes um número de qualquer país (Portugal, EUA, Reino Unido, Brasil...) para usar no WhatsApp Business, sem pagar mais nada.', ['Número de qualquer país', 'Pronto para WhatsApp Business', 'Ativo enquanto o Pro estiver ativo']);
   const opts = [['🇵🇹', 'Portugal'], ['🇺🇸', 'Estados Unidos'], ['🇬🇧', 'Reino Unido'], ['🇧🇷', 'Brasil'], ['🇪🇸', 'Espanha'], ['🇫🇷', 'França'], ['🌍', 'Outro país']];
-  $('#view').innerHTML = `<div class="page" style="max-width:760px">${head('Números internacionais', '', 'Um número local passa mais confiança aos clientes lá fora. Escolhe o país e fala com o suporte.')}
+  $('#view').innerHTML = `<div class="page" style="max-width:760px">${head('O teu número grátis', '', 'Incluído no teu plano Pro. Escolhe o país e pede ao suporte — entregamos o número pronto para o WhatsApp Business.')}
   <div class="card pad" style="margin-top:18px"><label class="lb" style="margin-top:0">País</label><div class="stages" id="cty">${opts.map(([f, n], i) => `<button data-c="${n}" class="${i ? '' : 'on'}">${f} ${n}</button>`).join('')}</div>
   <label class="lb">Para que vais usar</label><select class="in" id="use"><option>WhatsApp Business</option><option>Chamadas</option><option>WhatsApp e chamadas</option></select>
   <label class="lb">Notas (opcional)</label><textarea class="in" id="nn" rows="2" placeholder="Ex.: preciso de um número de Lisboa"></textarea>
   <div class="row-acts" style="margin-top:16px">${CFG.supportWhatsApp ? '<a class="btn wa" id="ask" target="_blank" rel="noopener">Pedir no WhatsApp do suporte</a>' : ''}${CFG.supportEmail ? '<a class="btn" id="askm">Pedir por e-mail</a>' : ''}</div>
   ${!CFG.supportWhatsApp && !CFG.supportEmail ? '<p class="note" style="margin-top:12px">Falta configurar SUPPORT_WHATSAPP na Vercel.</p>' : ''}</div>
-  <p class="note" style="margin-top:14px">O pedido é tratado manualmente pela equipa. Os preços e a disponibilidade dependem do país.</p></div>`;
+  <p class="note" style="margin-top:14px">O número é entregue depois do primeiro pagamento confirmado e fica ativo enquanto o teu plano Pro estiver ativo. 1 número por conta.</p></div>`;
   let c = opts[0][1];
   $$('#cty button').forEach(b => b.onclick = () => { c = b.dataset.c; $$('#cty button').forEach(x => x.classList.toggle('on', x === b)); });
-  const text = () => `Olá! Quero um número de ${c} no droply.\nUso: ${$('#use').value}\nConta: ${ME.email}\n${$('#nn').value}`;
+  const text = () => `Olá! Sou cliente Pro e quero o meu número grátis de ${c} no droply.\nUso: ${$('#use').value}\nConta: ${ME.email}\n${$('#nn').value}`;
   $('#ask') && ($('#ask').onclick = () => $('#ask').href = `https://wa.me/${CFG.supportWhatsApp}?text=${encodeURIComponent(text())}`);
   $('#askm') && ($('#askm').onclick = () => $('#askm').href = `mailto:${CFG.supportEmail}?subject=${encodeURIComponent('Número de ' + c)}&body=${encodeURIComponent(text())}`);
 }
@@ -877,7 +896,7 @@ function viewSettings() {
   const p = DB.profile;
   $('#view').innerHTML = `<div class="page" style="max-width:760px">${head('Definições')}
   <div class="card pad" style="margin-top:18px"><div class="h" style="font-size:18px">O teu negócio</div>
-   <div class="g2"><div><label class="lb">Moeda principal</label><select class="in" id="pCur">${CURRENCIES.map(c => `<option ${c === p.currency ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+   <div class="g2"><div><label class="lb">Moeda principal</label><select class="in" id="pCur">${CURRENCIES.map(c => `<option value="${c}" ${c === p.currency ? 'selected' : ''}>${c} · ${CUR_NAMES[c]}</option>`).join('')}</select></div>
    <div><label class="lb">Funil por defeito</label><select class="in" id="pFun">${Object.entries(FUNNELS).map(([k, f]) => `<option value="${k}" ${k === (p.funnel || 'servicos') ? 'selected' : ''}>${f.name}</option>`).join('')}</select></div></div></div>
   <div class="card pad" style="margin-top:14px"><div class="h" style="font-size:18px">O teu tom de voz</div><p class="mu" style="font-size:13.5px">O droply usa isto para escrever as mensagens como tu.</p>
    <label class="lb">Nome que assina as mensagens</label><input class="in" id="pName" value="${esc(p.name || ME.name || '')}">
@@ -892,6 +911,7 @@ function viewSettings() {
   <div class="card pad" style="margin-top:14px"><div class="h" style="font-size:18px">Os teus dados</div>
    <p class="mu" style="font-size:13.5px;margin-top:4px">CRM, vendas, sites e criações ficam guardados <b>só neste navegador</b>. Faz uma cópia de segurança regularmente.</p>
    <div class="row-acts"><button class="btn" id="exp">Exportar cópia (.json)</button><label class="btn">Importar cópia<input type="file" id="imp" accept="application/json" hidden></label><button class="btn ghost" id="wipe" style="color:var(--red)">Apagar tudo</button></div></div>
+  <div class="card pad" style="margin-top:14px"><div class="h" style="font-size:18px">O teu plano</div><p style="margin-top:6px">${ME.admin ? 'Administrador · sem limites' : `Plano <b>${esc(ME.planInfo?.name || '')}</b>${ME.until ? ' · ativo até ' + new Date(ME.until).toLocaleDateString('pt-PT') : ''}`}</p><div class="row-acts"><a class="btn sm" href="#/planos">Ver planos</a>${ME.admin ? '<a class="btn sm" href="#/admin">Gerir assinaturas</a>' : ''}</div></div>
   <div class="row-acts" style="margin-top:14px"><button class="btn" id="lo">Terminar sessão</button><a class="btn ghost" href="/" target="_blank">Página do droply</a><a class="btn ghost" href="/privacidade.html" target="_blank">Privacidade</a><a class="btn ghost" href="/termos.html" target="_blank">Termos</a></div></div>`;
   $('#pSave').onclick = () => { const tone = $('#pTone').value.trim(), ex = $('#pEx').value.trim(); Object.assign(DB.profile, { currency: $('#pCur').value, funnel: $('#pFun').value, name: $('#pName').value.trim(), company: $('#pCo').value.trim(), services: $('#pSv').value.trim(), toneRaw: tone, tone: tone + (ex ? '\nExemplo de mensagem do vendedor: ' + ex : ''), example: ex, signature: $('#pSig').value.trim() }); save(); toast('Guardado ✓'); };
   $('#ghOn') && ($('#ghOn').onclick = connectGithub);
@@ -904,24 +924,62 @@ function viewSettings() {
 
 /* ================= ADMIN ================= */
 async function viewAdmin() {
-  $('#view').innerHTML = `<div class="page" style="max-width:760px">${head('Acessos', '', 'Quando alguém paga, adiciona aqui o e-mail Google dessa pessoa. Para cancelar, remove.')}
-  <div class="card pad" style="margin-top:16px;display:flex;gap:8px"><input class="in" id="ae" placeholder="email@gmail.com"><button class="btn pri" id="aa">Dar acesso</button></div>
+  $('#view').innerHTML = `<div class="page" style="max-width:860px">${head('Assinaturas', '', 'Quando alguém paga, ativa aqui o plano no e-mail Google dessa pessoa. Renovar soma meses ao fim do plano atual.')}
+  <div class="card pad" style="margin-top:16px"><div class="adm"><input class="in" id="ae" placeholder="email@gmail.com"><select class="in" id="ap"><option value="basico">Básico · ${kz(CFG.plans?.basico?.price)}</option><option value="pro">Pro · ${kz(CFG.plans?.pro?.price)}</option></select>
+   <select class="in" id="am"><option value="1">1 mês</option><option value="3">3 meses</option><option value="12">12 meses</option><option value="0">Sem fim</option></select><button class="btn pri" id="aa">Ativar plano</button></div></div>
   <div id="al" class="card" style="padding:6px 18px;margin-top:12px"><p class="mu" style="padding:12px 0"><span class="spin"></span></p></div></div>`;
-  const draw = l => $('#al').innerHTML = l.length ? l.map(e => `<div style="display:flex;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)"><span>${esc(e)}</span><span style="flex:1"></span><button class="btn sm ghost" data-rm="${esc(e)}" style="color:var(--red)">Remover</button></div>`).join('') : '<p class="mu" style="padding:12px 0">Ainda ninguém na lista.</p>';
-  const bind = () => $$('[data-rm]').forEach(b => b.onclick = async () => { try { draw((await api('admin', { action: 'remove', email: b.dataset.rm })).emails); bind(); } catch (e) { toast(e.message, true); } });
-  try { draw((await api('admin')).emails); bind(); } catch (e) { $('#al').innerHTML = `<p class="note" style="margin:12px 0">${esc(e.message)}</p>`; }
-  $('#aa').onclick = async () => { try { draw((await api('admin', { action: 'add', email: $('#ae').value })).emails); bind(); $('#ae').value = ''; toast('Acesso dado ✓'); } catch (e) { toast(e.message, true); } };
+  const now = new Date().toISOString().slice(0, 10);
+  const draw = rows => { $('#al').innerHTML = rows.length ? `<table class="tb"><thead><tr><th>E-mail</th><th>Plano</th><th>Até</th><th></th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.email)}</td><td><span class="tag ${r.plan === 'pro' ? 'p' : ''}">${r.plan === 'pro' ? 'PRO' : 'BÁSICO'}</span></td><td>${r.until ? `<span style="color:${r.until < now ? 'var(--red)' : 'inherit'}">${new Date(r.until).toLocaleDateString('pt-PT')}${r.until < now ? ' · expirou' : ''}</span>` : '—'}</td><td style="text-align:right;white-space:nowrap"><button class="btn sm" data-ren="${esc(r.email)}" data-pl="${r.plan}">+1 mês</button> <button class="btn sm ghost" data-rm="${esc(r.email)}" style="color:var(--red)">Remover</button></td></tr>`).join('')}</tbody></table>` : '<p class="mu" style="padding:12px 0">Ainda sem assinantes.</p>'; bind(); };
+  const call = async (data, msg) => { try { draw((await api('admin', data)).rows); if (msg) toast(msg); } catch (e) { toast(e.message, true); } };
+  const bind = () => {
+    $$('[data-rm]').forEach(b => b.onclick = () => confirm('Remover o acesso de ' + b.dataset.rm + '?') && call({ action: 'remove', email: b.dataset.rm }, 'Removido'));
+    $$('[data-ren]').forEach(b => b.onclick = () => call({ email: b.dataset.ren, plan: b.dataset.pl, months: 1 }, 'Renovado +1 mês ✓'));
+  };
+  try { draw((await api('admin')).rows); } catch (e) { $('#al').innerHTML = `<p class="note" style="margin:12px 0">${esc(e.message)}</p>`; }
+  $('#aa').onclick = () => { call({ email: $('#ae').value, plan: $('#ap').value, months: $('#am').value }, 'Plano ativado ✓'); $('#ae').value = ''; };
+}
+
+/* ================= PLANOS E CHECKOUT ================= */
+const PLAN_FEAT = {
+  basico: p => [`${p.search} pesquisas por mês (até ${p.search * 20} negócios)`, `${p.analyze} análises de leads com IA`, `${p.site} sites com IA por mês`, 'CRM, funil e follow-ups', 'Mensagens prontas: WhatsApp, e-mail e chamada', 'Vendas, checkouts e Dashboard'],
+  pro: p => ['Tudo do Básico, com limites maiores', `${p.search} pesquisas por mês (até ${p.search * 20} negócios)`, `${p.analyze} análises · ${p.site} sites por mês`, `Estúdio IA: ${p.studio} gerações (influencer IA, roteiros, anúncios)`, 'Número internacional grátis, de qualquer país', 'Suporte prioritário no WhatsApp'],
+};
+function plansHTML(cur) {
+  const P = CFG.plans || {};
+  return `<div class="plans">${['basico', 'pro'].map(k => { const p = P[k]; if (!p) return ''; return `<div class="plan ${k === 'pro' ? 'hl' : ''}">
+   ${k === 'basico' ? '<span class="badge">Preço de lançamento</span>' : '<span class="badge g">Mais escolhido</span>'}
+   <b class="pn">${p.name}</b><div class="pp"><span class="h">${kz(p.price)}</span><small>/mês</small></div>
+   <ul>${PLAN_FEAT[k](p).map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+   ${cur === k ? '<button class="btn" disabled>O teu plano atual</button>' : `<button class="btn ${k === 'pro' ? 'pri' : ''}" data-buy="${k}">Escolher ${p.name}</button>`}</div>`; }).join('')}</div>`;
+}
+function payModal(k) {
+  const p = CFG.plans[k], url = CFG.checkout?.[k];
+  if (url) { window.open(url, '_blank', 'noopener'); }
+  const msg = `Olá! Quero ativar o plano ${p.name} do droply (${kz(p.price)}/mês).\nConta Google: ${ME.email}\nSegue o comprovativo.`;
+  const methods = String(CFG.payMethods || '').split('|').map(x => x.trim()).filter(Boolean);
+  modal(`<div class="h" style="font-size:22px">Plano ${p.name} · ${kz(p.price)}/mês</div>
+  ${url ? '<p class="mu" style="margin-top:6px">Abrimos o checkout numa nova janela. Paga lá e o acesso é ativado neste e-mail Google.</p>' : '<p class="mu" style="margin-top:6px">Paga por um destes meios e envia o comprovativo. Ativamos o plano neste e-mail Google, normalmente em poucas horas.</p>'}
+  ${methods.map(m => { const [n, ...v] = m.split(':'); return `<div class="paym"><div><small>${esc(v.length ? n : 'Pagamento')}</small><b>${esc(v.length ? v.join(':').trim() : n)}</b></div><button class="btn sm" data-cp="${esc(v.length ? v.join(':').trim() : n)}">Copiar</button></div>`; }).join('')}
+  ${!url && !methods.length ? '<p class="note" style="margin-top:12px">Fala com o suporte para receber os dados de pagamento.</p>' : ''}
+  <p class="mu2" style="font-size:12.5px;margin-top:12px">Conta: <b>${esc(ME.email)}</b></p>
+  <div class="row-acts" style="margin-top:12px">${url ? `<a class="btn pri" href="${esc(url)}" target="_blank" rel="noopener">Abrir checkout</a>` : ''}${CFG.supportWhatsApp ? `<a class="btn wa" href="https://wa.me/${CFG.supportWhatsApp}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Enviar comprovativo no WhatsApp</a>` : ''}${CFG.supportEmail ? `<a class="btn" href="mailto:${esc(CFG.supportEmail)}?subject=${encodeURIComponent('Ativar droply ' + p.name)}&body=${encodeURIComponent(msg)}">Por e-mail</a>` : ''}</div>`, 'dialog');
+  $$('#modal [data-cp]').forEach(b => b.onclick = () => copy(b.dataset.cp));
+}
+function viewPlans() {
+  $('#view').innerHTML = `<div class="page" style="max-width:900px">${head('Planos', '', 'Muda de plano quando quiseres. O Pro desbloqueia o Estúdio IA e o número internacional.')}${plansHTML(ME.admin ? '' : ME.plan)}</div>`;
+  $$('[data-buy]').forEach(b => b.onclick = () => payModal(b.dataset.buy));
 }
 
 /* ================= arranque ================= */
 async function start() {
   try {
     ME = await api('me');
-    if (!ME.allowed) return renderNoAccess();
-    load(); shell(); route();
+    if (!ME.allowed) { renderNoAccess(); const want = sessionStorage.getItem('droply:plan'); if (want && CFG.plans?.[want]) { sessionStorage.removeItem('droply:plan'); payModal(want); } return; }
+    load(); shell(); route(); askCurrency();
   } catch (e) { if (TOKEN) renderLogin(e.message); }
 }
 (async function boot() {
+  try { const pl = new URLSearchParams(location.search).get('plano'); if (pl) { sessionStorage.setItem('droply:plan', pl); history.replaceState(null, '', location.pathname + location.hash); } } catch {}
   try { CFG = await (await fetch('/api/config')).json(); } catch { CFG = {}; }
   try { TOKEN = localStorage.getItem('droply:token'); } catch {}
   if (TOKEN && tokenValid(TOKEN)) { initGoogle(); return start(); }

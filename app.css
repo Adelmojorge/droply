@@ -196,3 +196,27 @@ table.tb{width:100%;border-collapse:collapse;margin-top:14px;font-size:13.5px}
 .msg.sm{font:500 12.5px/1.5 "JetBrains Mono";max-height:220px;overflow:auto}
 .ol{padding-left:20px;margin:6px 0}.ol li{margin:3px 0}
 @media (max-width:860px){.cols2,.studio,.g3{grid-template-columns:1fr}.g2{grid-template-columns:1fr}}
+/* ===== v3: planos, moeda, upsell ===== */
+.acct{text-decoration:none;color:inherit}.acct:hover{background:rgba(255,255,255,.03)}.acct .gear{margin-left:auto;color:var(--mu2)}
+.nav a .cnt.pro{background:rgba(139,92,255,.18);color:#C9B5FF;border-radius:6px;padding:1px 6px;font-size:10px}
+.num{color:inherit}
+.curgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:18px}
+.curgrid button{text-align:left;background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:10px 12px;cursor:pointer}
+.curgrid button:hover{border-color:var(--p)}.curgrid b{display:block;font:800 16px "Plus Jakarta Sans"}.curgrid small{color:var(--mu);font-size:12px}
+.upsell{text-align:center;padding:34px 26px;margin-top:20px}.upsell>i{font-style:normal;font-size:40px}.upsell .h{font-size:26px;margin:10px 0 8px}
+.upsell ul{text-align:left;display:inline-block;margin:14px 0 20px}
+.plans{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px;text-align:left}
+.plan{position:relative;background:var(--panel);border:1px solid var(--line2);border-radius:22px;padding:22px;display:flex;flex-direction:column}
+.plan.hl{border:1px solid transparent;background:linear-gradient(var(--panel),var(--panel)) padding-box,var(--gr) border-box}
+.plan .badge{align-self:flex-start;font:700 10.5px "JetBrains Mono";letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:4px 10px;background:rgba(255,197,61,.12);color:var(--warm)}
+.plan .badge.g{background:var(--gr);color:#fff}
+.plan .pn{font:800 20px "Plus Jakarta Sans";margin-top:12px}
+.plan .pp{display:flex;align-items:baseline;gap:6px;margin:6px 0 12px}.plan .pp .h{font-size:34px}.plan .pp small{color:var(--mu)}
+.plan ul{list-style:none;margin-bottom:18px;flex:1}.plan li{padding:5px 0 5px 24px;position:relative;font-size:14px;color:#D6D0E0}
+.plan li:before{content:"✓";position:absolute;left:0;font-weight:800;color:var(--p)}
+.plan .btn{width:100%;padding:12px}
+.paym{display:flex;align-items:center;gap:10px;border:1px solid var(--line2);border-radius:14px;padding:10px 12px;margin-top:8px}
+.paym small{display:block;font-size:11.5px;color:var(--mu)}.paym b{font:500 14px "JetBrains Mono";word-break:break-all}.paym .btn{margin-left:auto}
+.adm{display:grid;grid-template-columns:1.6fr 1fr .8fr auto;gap:8px}
+.login.plansp{align-items:start;padding-top:40px}.login .box.wide{max-width:820px}
+@media (max-width:860px){.plans,.adm{grid-template-columns:1fr}}
