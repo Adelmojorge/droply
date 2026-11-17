@@ -106,3 +106,8 @@ api/github/callback.js          → ligação ao GitHub
 lib/util.js                     → login Google, limites, IA
 privacidade.html, termos.html   → páginas legais
 ```
+
+## IA e pesquisa grátis (nov. 2026)
+- IA: Google Gemini (plano grátis). Variável `GEMINI_API_KEY` (Google AI Studio). Opcional: `AI_MODEL`.
+- Encontrar clientes: OpenStreetMap (Nominatim + Overpass), sem chave. Se existir `GOOGLE_PLACES_API_KEY`, usa o Google Maps.
+- Contas e dados: Supabase (`droply-supabase.js`).
