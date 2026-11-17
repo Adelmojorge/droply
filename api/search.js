@@ -27,6 +27,33 @@ supermercado: [["shop","supermarket"]]; padaria: [["shop","bakery"]]; farmácia:
 escola: [["amenity","school"]]; explicações: [["amenity","prep_school"]]; veterinário: [["amenity","veterinary"]]; lavandaria: [["shop","laundry"],["shop","dry_cleaning"]].
 Regras: "sem site" => website "none". "com site" => "has". Senão "any". Não inventes filtros que o pedido não diz.`;
 
+// Plano B sem IA (quando a IA grátis está ocupada): "dentistas em Lisboa sem site"
+const DICT = [
+  [/est[eé]tica|beleza|beauty|spa|unhas|nail/i, [['shop', 'beauty'], ['leisure', 'spa']], 'Estética'],
+  [/dentist|dent[aá]ri/i, [['amenity', 'dentist'], ['healthcare', 'dentist']], 'Dentistas'], [/cl[ií]nica/i, [['amenity', 'clinic'], ['healthcare', 'clinic']], 'Clínicas'],
+  [/m[eé]dic/i, [['amenity', 'doctors']], 'Médicos'], [/restaura|restaurant/i, [['amenity', 'restaurant']], 'Restaurantes'], [/pizz/i, [['amenity', 'restaurant']], 'Pizzarias'],
+  [/hamb|burger|fast/i, [['amenity', 'fast_food']], 'Fast food'], [/caf[eé]|coffee/i, [['amenity', 'cafe']], 'Cafés'], [/\bbar(es)?\b|pub/i, [['amenity', 'bar'], ['amenity', 'pub']], 'Bares'],
+  [/hotel|hostel|pens[aã]o|guest/i, [['tourism', 'hotel'], ['tourism', 'guest_house']], 'Hotéis'], [/gin[aá]sio|gym|fitness/i, [['leisure', 'fitness_centre']], 'Ginásios'],
+  [/cabeleir|barbe|hair|sal[aã]o/i, [['shop', 'hairdresser']], 'Cabeleireiros'], [/est[eé]tica|beleza|beauty|spa|unhas|nail/i, [['shop', 'beauty'], ['leisure', 'spa']], 'Estética'],
+  [/advogad|lawyer|jur[ií]d/i, [['office', 'lawyer']], 'Advogados'], [/contabil|account/i, [['office', 'accountant']], 'Contabilistas'], [/imobili|real estate|estate/i, [['office', 'estate_agent']], 'Imobiliárias'],
+  [/segur|insurance/i, [['office', 'insurance']], 'Seguros'], [/canaliz|plumb/i, [['craft', 'plumber']], 'Canalizadores'], [/eletric|electric/i, [['craft', 'electrician']], 'Eletricistas'],
+  [/oficina|mec[aâ]nic|car repair/i, [['shop', 'car_repair']], 'Oficinas'], [/stand|carros|car dealer/i, [['shop', 'car']], 'Stands'], [/supermerc|mercado|grocery/i, [['shop', 'supermarket'], ['shop', 'convenience']], 'Supermercados'],
+  [/padaria|pastelaria|bakery/i, [['shop', 'bakery'], ['shop', 'pastry']], 'Padarias'], [/farm[aá]cia|pharmac/i, [['amenity', 'pharmacy']], 'Farmácias'], [/roupa|moda|clothes|boutique/i, [['shop', 'clothes']], 'Lojas de roupa'],
+  [/flor/i, [['shop', 'florist']], 'Floristas'], [/escola|col[eé]gio|school/i, [['amenity', 'school']], 'Escolas'], [/explica/i, [['amenity', 'prep_school']], 'Explicações'],
+  [/veterin|pet/i, [['amenity', 'veterinary']], 'Veterinários'], [/lavand|laundry/i, [['shop', 'laundry'], ['shop', 'dry_cleaning']], 'Lavandarias'], [/ótica|optic/i, [['shop', 'optician']], 'Óticas'],
+];
+function heuristicPlan(prompt) {
+  const p = prompt.replace(/\b(sem|com)\s+(site|website)\b/ig, ' ').replace(/\s+/g, ' ').trim();
+  const m = p.match(/^(.*)\s+(?:em|no|na|nos|nas|in)\s+(.+)$/i);
+  const what = (m ? m[1] : p).trim(), area = (m ? m[2] : '').replace(/[,.]\s*$/, '').trim();
+  const d = DICT.find(([re]) => re.test(what));
+  return {
+    textQuery: prompt, label: `${d ? d[2] : what} · ${area || '?'}`,
+    filters: { website: /sem\s+(site|website)/i.test(prompt) ? 'none' : /com\s+(site|website)/i.test(prompt) ? 'has' : 'any' },
+    osm: { area, tags: d ? d[1] : [], nameRegex: d ? null : what }, _fallback: true,
+  };
+}
+
 const UA = 'droply/1.0 (https://droply.codedropstudio.online)';
 const PAGE = 20;
 
@@ -147,7 +174,8 @@ export default handler(async (req, res) => {
     if (prompt.length < 4) throw httpError(400, 'Escreve que clientes procuras.');
     await consume(user, 'search');
     const t0 = Date.now();
-    plan = await ai({ system: SYS, user: prompt, maxTokens: 500, temperature: 0 });
+    try { plan = await ai({ system: SYS, user: prompt, maxTokens: 500, temperature: 0 }); }
+    catch (e) { if (key) throw e; plan = heuristicPlan(prompt); } // sem IA: usa o plano B
     plan._aiMs = Date.now() - t0;
     if (!plan.textQuery && !plan.osm) throw httpError(400, 'Não percebi o pedido. Diz o tipo de empresa e a cidade.');
   } else {
