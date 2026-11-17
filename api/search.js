@@ -174,7 +174,7 @@ export default handler(async (req, res) => {
     if (prompt.length < 4) throw httpError(400, 'Escreve que clientes procuras.');
     await consume(user, 'search');
     const t0 = Date.now();
-    try { plan = await ai({ system: SYS, user: prompt, maxTokens: 500, temperature: 0 }); }
+    try { plan = await Promise.race([ai({ system: SYS, user: prompt, maxTokens: 500, temperature: 0 }), new Promise((_, rej) => setTimeout(() => rej(new Error('IA lenta')), 15000))]); }
     catch (e) { if (key) throw e; plan = heuristicPlan(prompt); } // sem IA: usa o plano B
     plan._aiMs = Date.now() - t0;
     if (!plan.textQuery && !plan.osm) throw httpError(400, 'Não percebi o pedido. Diz o tipo de empresa e a cidade.');
