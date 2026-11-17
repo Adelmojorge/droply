@@ -22,7 +22,7 @@ export default handler(async (req, res) => {
     const p = currentHtml
       ? `Altera este site conforme o pedido e devolve o HTML completo atualizado.\nPEDIDO: ${String(instructions).slice(0, 1500)}\nHTML ATUAL:\n${String(currentHtml).slice(0, 60000)}`
       : `Cria este site (pode ser de qualquer tipo: negócio, portfólio, landing page, loja, evento, infoproduto). Se faltarem dados reais (telefone, morada, preços), usa marcadores claros como [Telefone] em vez de inventar.\nPEDIDO DO UTILIZADOR:\n${String(brief).slice(0, 3000)}`;
-    let h = await ai({ system: SYS, user: p, json: false, maxTokens: 8000, temperature: 0.7 });
+    let h = await ai({ system: SYS, user: p, json: false, maxTokens: 16000, temperature: 0.7 });
     h = h.replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
     const k = h.toLowerCase().indexOf('<!doctype'); if (k > 0) h = h.slice(k);
     if (!/<html/i.test(h)) throw httpError(502, 'A IA não devolveu um site válido. Tenta outra vez.');
@@ -36,7 +36,7 @@ export default handler(async (req, res) => {
   const prompt = currentHtml
     ? `Altera este site conforme o pedido do utilizador e devolve o HTML completo atualizado.\nPEDIDO: ${data.pedidoDoUtilizador}\nDADOS: ${JSON.stringify(data.empresa)}\nHTML ATUAL:\n${String(currentHtml).slice(0, 60000)}`
     : `Cria o site para esta empresa:\n${JSON.stringify(data)}`;
-  let html = await ai({ system: SYS, user: prompt, json: false, maxTokens: 8000, temperature: 0.7 });
+  let html = await ai({ system: SYS, user: prompt, json: false, maxTokens: 16000, temperature: 0.7 });
   html = html.replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
   const i = html.toLowerCase().indexOf('<!doctype'); if (i > 0) html = html.slice(i);
   if (!/<html/i.test(html)) throw httpError(502, 'A IA não devolveu um site válido. Tenta outra vez.');
