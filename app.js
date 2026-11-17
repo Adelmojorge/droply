@@ -117,7 +117,7 @@ function normalize() {
   DB.leads ||= {}; DB.searches ||= []; DB.sites ||= {}; DB.profile ||= {}; DB.gh ||= null;
   DB.sequences ||= []; DB.sales ||= []; DB.products ||= []; DB.pay ||= {}; DB.studio ||= [];
   for (const l of Object.values(DB.leads)) { l.funnel ||= 'servicos'; l.status ||= 'novo'; l.activities ||= []; if (!l.temp && l.analysis?.temperature) l.temp = l.analysis.temperature; }
-  for (const s of Object.values(DB.sites)) s.leadId ??= null;
+  for (const s of Object.values(DB.sites)) { s.leadId ??= null; s.busy = false; }
 }
 async function load() { DB = await droplyDB.loadAll(); normalize(); }
 function save() {
@@ -858,86 +858,229 @@ function seqEditor(seq, isNew = false) {
 }
 
 /* ================= SITES ================= */
-async function createSite({ leadId = null, brief = '', name = '' }) {
-  const l = leadId ? DB.leads[leadId] : null;
-  const key = 'site:' + (leadId || uid()); BUSY[key] = name || l?.name || 'Novo site';
-  location.hash = '#/sites'; toast('A criar o site com IA... pode levar até 1 minuto.'); viewSites(new URLSearchParams());
+/* ---------- anexos (imagens, PDFs, textos) como no Lovable ---------- */
+const TXT_EXT = /\.(txt|md|csv|json|html?|xml|css|js)$/i;
+async function toBlob(file, max, type = 'image/webp', q = 0.85) {
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  return new Promise(r => c.toBlob(r, type, q));
+}
+const blobB64 = blob => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(blob); });
+async function prepFile(f) {
+  const a = { id: uid(), name: f.name, kind: 'text', role: 'asset' };
+  if (/^image\//.test(f.type)) {
+    a.kind = 'image'; a.mime = 'image/webp';
+    const big = await toBlob(f, 1600); a.preview = URL.createObjectURL(big);
+    a.url = await droplyDB.uploadAsset(big, f.name);
+    a.data = await blobB64(await toBlob(f, 1024, 'image/webp', 0.8));
+  } else if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
+    if (f.size > 3 * 1024 * 1024) throw new Error(`"${f.name}" tem mais de 3 MB.`);
+    a.kind = 'pdf'; a.mime = 'application/pdf'; a.data = await blobB64(f);
+  } else if (/^text\//.test(f.type) || TXT_EXT.test(f.name)) {
+    a.text = (await f.text()).slice(0, 15000);
+  } else throw new Error(`"${f.name}": formato não suportado. Usa imagens, PDF ou ficheiros de texto.`);
+  return a;
+}
+const attPayload = list => list.map(({ kind, name, mime, data, text, url, role }) => ({ kind, name, mime, data, text, url, role }));
+function composer(el, { placeholder, button = 'Enviar', onSubmit, attach = [], selection = null, onSelect = null, ideas = [] }) {
+  let ATT = attach, busy = false;
+  el.innerHTML = `<div class="cmp"><div class="cmpatt" hidden></div><div class="cmpsel" hidden></div>
+   <textarea class="cmpta" rows="3" placeholder="${esc(placeholder)}"></textarea>
+   <div class="cmprow"><label class="ib round" title="Anexar imagens, PDFs ou textos">${ic('plus')}<input type="file" multiple accept="image/*,application/pdf,.txt,.md,.csv,.json,.html" hidden></label>
+    ${onSelect ? `<button class="chip cmpsb" type="button" title="Clica num elemento do site para o editar">${ic('sparkle', 14)} Selecionar elemento</button>` : ''}
+    <span class="sp"></span><button class="send cmpgo" aria-label="${esc(button)}">${ic('up')}</button></div>
+   ${ideas.length ? `<div class="cmpideas">${ideas.map(x => `<span class="chip" data-idea="${esc(x)}">${esc(x)}</span>`).join('')}</div>` : ''}</div>`;
+  const ta = $('.cmpta', el), box = $('.cmpatt', el), selBox = $('.cmpsel', el);
+  const draw = () => {
+    box.hidden = !ATT.length;
+    box.innerHTML = ATT.map(a => `<div class="att" data-id="${a.id}">${a.kind === 'image' ? `<img src="${esc(a.preview || a.url)}" alt="">` : `<span class="fi">${ic(a.kind === 'pdf' ? 'note' : 'note', 18)}</span>`}
+      <div><b>${esc(a.name)}</b>${a.loading ? '<small>A carregar...</small>' : a.kind === 'image' ? `<button class="rl" data-role="${a.id}">${a.role === 'ref' ? 'Referência de design' : 'Usar no site'}</button>` : `<small>${a.kind === 'pdf' ? 'PDF' : 'Texto'}</small>`}</div><button class="x" data-rm="${a.id}" aria-label="Remover">${ic('x', 14)}</button></div>`).join('');
+    $$('[data-rm]', box).forEach(b => b.onclick = () => { ATT = ATT.filter(x => x.id !== b.dataset.rm); draw(); });
+    $$('[data-role]', box).forEach(b => b.onclick = () => { const a = ATT.find(x => x.id === b.dataset.role); a.role = a.role === 'ref' ? 'asset' : 'ref'; draw(); });
+  };
+  const drawSel = () => { selBox.hidden = !selection; if (selection) selBox.innerHTML = `${ic('sparkle', 14)}<span>A editar: <b>&lt;${esc(selection.tag)}&gt;</b> ${esc(selection.text || '')}</span><button class="x" aria-label="Limpar">${ic('x', 14)}</button>`; $('.x', selBox) && ($('.x', selBox).onclick = () => { selection = null; drawSel(); }); };
+  const add = async files => {
+    const list = [...files].slice(0, 8 - ATT.length);
+    for (const f of list) {
+      const tmp = { id: uid(), name: f.name, kind: /^image\//.test(f.type) ? 'image' : 'text', loading: true, preview: /^image\//.test(f.type) ? URL.createObjectURL(f) : '' };
+      ATT.push(tmp); draw();
+      try { const a = await prepFile(f); Object.assign(tmp, a, { id: tmp.id, loading: false }); }
+      catch (e) { ATT = ATT.filter(x => x !== tmp); toast(e.message, true); }
+      draw();
+    }
+    const size = ATT.reduce((n, a) => n + (a.data?.length || 0) + (a.text?.length || 0), 0);
+    if (size > 3.6e6) { toast('Os anexos são grandes demais (máx. ~3 MB no total). Remove algum.', true); }
+  };
+  $('input[type=file]', el).onchange = e => { add(e.target.files); e.target.value = ''; };
+  el.ondragover = e => { e.preventDefault(); el.classList.add('drag'); }; el.ondragleave = () => el.classList.remove('drag');
+  el.ondrop = e => { e.preventDefault(); el.classList.remove('drag'); if (e.dataTransfer.files.length) add(e.dataTransfer.files); };
+  ta.onpaste = e => { const fs = [...(e.clipboardData?.files || [])]; if (fs.length) { e.preventDefault(); add(fs); } };
+  $$('[data-idea]', el).forEach(c => c.onclick = () => { ta.value = c.dataset.idea; ta.focus(); });
+  $('.cmpsb', el) && ($('.cmpsb', el).onclick = () => onSelect(sel => { selection = sel; drawSel(); ta.focus(); }));
+  const go = async () => {
+    if (busy) return; const text = ta.value.trim();
+    if (ATT.some(a => a.loading)) return toast('Espera que os anexos acabem de carregar.', true);
+    if (!text && !ATT.length) return ta.focus();
+    busy = true; $('.cmpgo', el).disabled = true;
+    const ok = await onSubmit({ text, files: ATT, selection });
+    busy = false; $('.cmpgo', el).disabled = false;
+    if (ok !== false) { ta.value = ''; ATT = []; selection = null; draw(); drawSel(); }
+  };
+  $('.cmpgo', el).onclick = go;
+  ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } };
+  draw(); drawSel();
+  return { focus: () => ta.focus(), setSelection: sel => { selection = sel; drawSel(); } };
+}
+
+/* ---------- criar site ---------- */
+const SITE_IDEAS = ['Landing page para um curso online de marketing com IA', 'Portfólio de um fotógrafo de casamentos em Luanda', 'Site de uma pastelaria em Lisboa com menu e encomendas por WhatsApp', 'Página de vendas para um ebook', 'Site para uma agência de vídeos com IA'];
+async function runSite(s, { text, files = [], selection = null, first = false }) {
+  const l = s.leadId ? DB.leads[s.leadId] : null;
+  s.chat ||= []; s.chat.push({ role: 'user', text: text || '(anexos)', files: files.map(f => ({ name: f.name, kind: f.kind, url: f.url || '' })), sel: selection ? '<' + selection.tag + '> ' + (selection.text || '') : '', at: Date.now() });
+  s.busy = true; save(); if (location.hash === '#/site/' + s.id) drawChat(s);
   try {
-    const r = await api('site', l ? { lead: l, analysis: l.analysis } : { brief });
-    const id = uid(); DB.sites[id] = { id, leadId, name: name || l?.name || 'Novo site', brief, html: r.html, createdAt: Date.now(), updatedAt: Date.now(), versions: [] }; save();
-    refreshMe(); shell(); location.hash = '#/site/' + id;
-  } catch (e) { toast(e.message, true); } finally { delete BUSY[key]; if (location.hash.startsWith('#/sites')) viewSites(new URLSearchParams()); }
+    const payload = { files: attPayload(files), selection: selection?.html || '' };
+    const r = await api('site', first
+      ? (l ? { lead: l, analysis: l.analysis, instructions: text, ...payload } : { brief: text, ...payload })
+      : (l ? { lead: l, analysis: l.analysis, instructions: text, currentHtml: s.html, ...payload } : { instructions: text, currentHtml: s.html, ...payload }));
+    if (s.html) { s.versions = [...(s.versions || []).map(v => typeof v === 'string' ? { html: v, at: s.updatedAt, note: 'Versão anterior' } : v), { html: s.html, at: s.updatedAt || Date.now(), note: s.lastNote || 'Versão anterior' }].slice(-15); }
+    s.html = r.html; s.lastNote = r.summary || (first ? 'Primeira versão do site' : text.slice(0, 80)); s.updatedAt = Date.now();
+    s.chat.push({ role: 'ai', text: r.summary || (first ? 'Criei a primeira versão do teu site. Diz-me o que queres mudar.' : 'Feito. Apliquei as alterações.'), at: Date.now() });
+    refreshMe();
+  } catch (e) { s.chat.push({ role: 'ai', text: 'Não consegui: ' + e.message, err: true, at: Date.now() }); toast(e.message, true); }
+  s.busy = false; save();
+  if (location.hash === '#/site/' + s.id) viewSite(s.id); else if (location.hash.startsWith('#/sites')) viewSites(new URLSearchParams());
+}
+async function createSite({ leadId = null, brief = '', name = '', files = [] }) {
+  const l = leadId ? DB.leads[leadId] : null;
+  const id = uid();
+  const s = DB.sites[id] = { id, leadId, name: name || l?.name || brief.slice(0, 40) || 'Novo site', brief, html: '', chat: [], versions: [], createdAt: Date.now(), updatedAt: Date.now() };
+  save(); shell(); location.hash = '#/site/' + id;
+  await runSite(s, { text: brief || (l ? 'Cria um site profissional para ' + l.name : ''), files, first: true });
 }
 function newSiteModal() {
-  const ideas = ['Landing page para um curso online de marketing com IA', 'Portfólio de um fotógrafo de casamentos em Luanda', 'Site de uma pastelaria em Lisboa com menu e encomendas por WhatsApp', 'Página de vendas para um ebook sobre investir em criptomoedas para iniciantes', 'Site para uma agência de vídeos com IA para marcas'];
-  const m = modal(`<div class="h" style="font-size:22px">Criar um site com IA</div><p class="mu" style="font-size:13.5px">Descreve qualquer site: negócio, portfólio, landing page, loja, evento, infoproduto.</p>
-  <label class="lb">Nome do projeto</label><input class="in" id="sNm" placeholder="Ex.: Pastelaria Doce Lar">
-  <label class="lb">Descreve o site</label><textarea class="in" id="sBr" rows="6" placeholder="O que é, para quem, secções que queres, cores, contactos, língua..."></textarea>
-  <div class="tags" style="margin-top:10px">${ideas.map(x => `<span class="chip" data-i="${esc(x)}">${esc(x)}</span>`).join('')}</div>
-  <div class="row-acts" style="margin-top:14px"><button class="btn pri" id="sGo">Criar site ✦ (1 site)</button></div>`, 'dialog');
-  $$('[data-i]', m).forEach(c => c.onclick = () => { $('#sBr', m).value = c.dataset.i; });
-  $('#sGo', m).onclick = () => { const brief = $('#sBr', m).value.trim(); if (brief.length < 10) return toast('Descreve o site com mais detalhe.', true); const name = $('#sNm', m).value.trim() || brief.slice(0, 40); closeModal(); createSite({ brief, name }); };
+  const m = modal(`<div class="h" style="font-size:24px">O que vamos construir?</div><p class="mu" style="margin-top:4px">Descreve o site e anexa logótipo, fotos, capturas de referência ou documentos (PDF, texto).</p>
+  <label class="lb">Nome do projeto</label><input class="in" id="sNm" placeholder="Ex.: Pastelaria Doce Lar"><div id="sCmp" style="margin-top:12px"></div>`, 'dialog');
+  m.querySelector('.dialog').classList.add('wide');
+  composer($('#sCmp', m), { placeholder: 'Ex.: site para a minha pastelaria em Lisboa, com menu, fotos dos bolos (anexadas) e encomendas por WhatsApp. Estilo como a referência anexada.', button: 'Criar site', ideas: SITE_IDEAS,
+    onSubmit: async ({ text, files }) => { if (text.length < 8 && !files.length) { toast('Descreve o site com mais detalhe.', true); return false; } const name = $('#sNm', m).value.trim() || text.slice(0, 40) || 'Novo site'; closeModal(); createSite({ brief: text, name, files }); } }).focus();
 }
+
+/* ---------- GitHub (Device Flow: sem client secret) ---------- */
 function handleGithubReturn(qs) {
-  const tok = qs.get('gh_token'), err = qs.get('gh_error'), st = qs.get('state');
-  if (err) toast(err, true);
-  if (tok) {
-    let exp = null; try { exp = sessionStorage.getItem('droply:ghstate'); } catch {}
-    if (exp && st !== exp) return toast('Ligação ao GitHub inválida. Tenta outra vez.', true);
-    DB.gh = { token: tok }; save();
-    fetch('https://api.github.com/user', { headers: { Authorization: 'Bearer ' + tok } }).then(r => r.json()).then(u => { DB.gh.login = u.login; save(); toast('GitHub ligado: @' + u.login + ' ✓'); route(); });
-    let back = null; try { back = sessionStorage.getItem('droply:ghback'); sessionStorage.removeItem('droply:ghback'); } catch {}
-    history.replaceState(null, '', '/app' + (back || '#/sites')); return true;
-  }
+  const err = qs.get('gh_error'); if (err) toast(err, true);
+  history.replaceState(null, '', '/app#/sites'); return true;
 }
-function connectGithub() {
-  if (!CFG.githubClientId) return toast('Falta configurar GITHUB_CLIENT_ID na Vercel.', true);
-  const st = uid(); try { sessionStorage.setItem('droply:ghstate', st); sessionStorage.setItem('droply:ghback', location.hash); } catch {}
-  location.href = `https://github.com/login/oauth/authorize?client_id=${CFG.githubClientId}&scope=public_repo&state=${st}&redirect_uri=${encodeURIComponent(location.origin + '/api/github/callback')}`;
+async function connectGithub(after) {
+  let st;
+  try { st = await api('github/device', { action: 'start' }); } catch (e) { return toast(e.message, true); }
+  const m = modal(`<div style="text-align:center"><div class="h" style="font-size:22px">Ligar ao GitHub</div>
+   <p class="mu" style="margin-top:6px">1. Copia este código &nbsp;·&nbsp; 2. Abre o GitHub e cola-o &nbsp;·&nbsp; 3. Clica em "Authorize"</p>
+   <div class="ghcode">${esc(st.user_code)}</div>
+   <div class="row-acts" style="justify-content:center"><button class="btn pri" id="ghGo">Copiar código e abrir o GitHub</button></div>
+   <p class="mu2" id="ghSt" style="margin-top:14px;font-size:13px"><span class="spin"></span> À espera da autorização no GitHub...</p></div>`, 'dialog');
+  $('#ghGo', m).onclick = () => { navigator.clipboard?.writeText(st.user_code).catch(() => {}); window.open(st.verification_uri, '_blank', 'noopener'); };
+  let wait = (st.interval || 5) * 1000, alive = true;
+  const end = Date.now() + (st.expires_in || 900) * 1000;
+  const poll = async () => {
+    if (!alive || $('#modal').hidden) return;
+    if (Date.now() > end) { $('#ghSt', m).textContent = 'O código expirou. Fecha e tenta outra vez.'; return; }
+    try {
+      const r = await api('github/device', { action: 'poll', device_code: st.device_code });
+      if (r.access_token) {
+        alive = false; DB.gh = { token: r.access_token };
+        try { DB.gh.login = (await (await fetch('https://api.github.com/user', { headers: { Authorization: 'Bearer ' + r.access_token } })).json()).login; } catch {}
+        save(); closeModal(); toast('GitHub ligado: @' + (DB.gh.login || '') + ' ✓'); if (after) after(); else route(); return;
+      }
+      if (r.error) { $('#ghSt', m).textContent = r.error; return; }
+      if (r.slow) wait += 5000;
+    } catch (e) { $('#ghSt', m).textContent = e.message; return; }
+    setTimeout(poll, wait);
+  };
+  setTimeout(poll, wait);
 }
+
+/* ---------- lista de sites ---------- */
 function viewSites(qs) {
   if (qs.get('gh_token') || qs.get('gh_error')) { if (handleGithubReturn(qs)) return route(); }
   const S = Object.values(DB.sites).sort((a, b) => b.updatedAt - a.updatedAt);
-  const pending = Object.entries(BUSY).filter(([k]) => k.startsWith('site:')).map(([, v]) => v);
-  $('#view').innerHTML = `<div class="page">${head('Sites com IA', `${DB.gh?.token ? `<span class="tag g">GITHUB · @${esc(DB.gh.login || 'ligado')}</span>` : '<button class="btn sm" id="gh">Ligar GitHub</button>'}<button class="btn sm pri" id="nsite">+ Criar site</button>`, 'Cria qualquer site com IA, edita com instruções simples e publica grátis no GitHub + Vercel.')}
-  ${pending.length ? `<div class="card pad" style="margin-top:16px;display:flex;gap:10px;align-items:center"><span class="spin"></span> A criar: ${pending.map(esc).join(', ')}</div>` : ''}
-  <div class="grid">${S.map(s => `<a class="card lead" href="#/site/${s.id}" style="text-decoration:none"><div style="height:150px;border-radius:12px;overflow:hidden;background:#fff;position:relative"><iframe srcdoc="${esc(s.html)}" style="width:400%;height:400%;transform:scale(.25);transform-origin:0 0;border:0;pointer-events:none" sandbox="allow-scripts" loading="lazy"></iframe></div><b>${esc(s.name)}</b><small>${s.repo ? '🌐 ' + esc(s.repo) : 'Ainda não publicado'} · ${fmtDate(s.updatedAt)}</small></a>`).join('')}</div>
-  ${!S.length && !pending.length ? `<div class="empty">${logo(48)}<div class="h">Ainda não criaste sites</div><p>Cria um site do zero ou a partir de um lead do CRM.</p><button class="btn pri" onclick="document.getElementById('nsite').click()" style="margin-top:14px">+ Criar site</button></div>` : ''}</div>`;
-  $('#gh') && ($('#gh').onclick = connectGithub);
+  $('#view').innerHTML = `<div class="page">${head('Sites', `${DB.gh?.token ? `<span class="tag g">GitHub · @${esc(DB.gh.login || 'ligado')}</span>` : '<button class="btn sm" id="gh">Ligar GitHub</button>'}<button class="btn pri" id="nsite">Novo site</button>`, 'Cria qualquer site com IA, edita a conversar e publica grátis.')}
+  <div class="filters"><div class="sin">${ic('search', 16)}<input class="in" id="sq" placeholder="Procurar sites..."></div></div>
+  <div class="pgrid" id="sg"></div>
+  ${!S.length ? `<div class="empty">${logo(48)}<div class="h">Ainda não criaste sites</div><p>Cria um site do zero (com imagens e documentos anexados) ou a partir de um cliente.</p><button class="btn pri" onclick="document.getElementById('nsite').click()" style="margin-top:14px">Novo site</button></div>` : ''}</div>`;
+  const draw = q => { $('#sg').innerHTML = S.filter(s => !q || s.name.toLowerCase().includes(q)).map(s => `<a class="pcard2" href="#/site/${s.id}"><div class="thumb sthumb">${s.html ? `<iframe srcdoc="${esc(s.html)}" sandbox="allow-scripts" loading="lazy" tabindex="-1"></iframe>` : `<span class="big"><span class="spin"></span></span>`}${s.repo ? '<span class="badge">Publicado</span>' : ''}</div>
+    <div class="meta"><span class="mav" style="background:${colorOf(s.name)}">${esc((s.name[0] || '?').toUpperCase())}</span><div style="min-width:0"><b>${esc(s.name)}</b><small>${s.busy ? 'A criar...' : 'Editado ' + fmtDate(s.updatedAt)}</small></div></div></a>`).join(''); };
+  draw(''); $('#sq').oninput = e => draw(e.target.value.toLowerCase());
+  $('#gh') && ($('#gh').onclick = () => connectGithub());
   $('#nsite').onclick = newSiteModal;
   if (qs.get('novo')) { history.replaceState(null, '', '#/sites'); newSiteModal(); }
 }
+
+/* ---------- editor de site (chat à esquerda, pré-visualização à direita) ---------- */
+const SEL_JS = `<script>(function(){var last;function off(){if(last){last.style.outline=last.__o||'';}}document.addEventListener('mouseover',function(e){off();last=e.target;last.__o=last.style.outline;last.style.outline='2px solid #FF3D8B';last.style.outlineOffset='2px';last.style.cursor='crosshair'},true);document.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();off();var el=e.target;parent.postMessage({droplySel:el.outerHTML.slice(0,3000),tag:el.tagName.toLowerCase(),text:(el.innerText||el.alt||'').trim().slice(0,60)},'*')},true)})()<\/script>`;
+let SITE_UI = { dev: '100%', code: false, selecting: null };
+function drawChat(s) {
+  const box = $('#msgs'); if (!box) return;
+  box.innerHTML = (s.chat || []).map(c => c.role === 'user'
+    ? `<div class="mu-msg">${c.sel ? `<div class="msel">${ic('sparkle', 12)} ${esc(c.sel)}</div>` : ''}${c.files?.length ? `<div class="mfiles">${c.files.map(f => f.kind === 'image' && f.url ? `<img src="${esc(f.url)}" alt="${esc(f.name)}">` : `<span>${ic('note', 12)} ${esc(f.name)}</span>`).join('')}</div>` : ''}<div class="mb">${esc(c.text)}</div></div>`
+    : `<div class="ai-msg${c.err ? ' err' : ''}"><span class="aav">${logo(16)}</span><div class="mb">${esc(c.text)}</div></div>`).join('')
+    + (s.busy ? `<div class="ai-msg"><span class="aav">${logo(16)}</span><div class="mb think"><span class="spin"></span> ${s.html ? 'A aplicar as alterações...' : 'A construir o teu site...'} pode levar 1 minuto</div></div>` : '');
+  box.scrollTop = box.scrollHeight;
+}
 function viewSite(id) {
   const s = DB.sites[id]; if (!s) return (location.hash = '#/sites');
+  if (!s.chat?.length && s.html) s.chat = [{ role: 'user', text: s.brief || 'Criar o site', at: s.createdAt }, { role: 'ai', text: 'Criei a primeira versão do site.', at: s.createdAt }];
   const l = s.leadId ? DB.leads[s.leadId] : null;
-  $('#view').innerHTML = `<div class="page" style="max-width:none"><div class="top">${mobBtn()}<a class="btn sm" href="#/sites">←</a><h1 class="h" style="font-size:24px">${esc(s.name)}</h1><span class="sp"></span>
-  <button class="btn sm" id="dl">Descarregar HTML</button><button class="btn sm" id="open">Ecrã inteiro</button></div>
-  <div class="editor"><div class="pane">
-   <div class="card pad"><b>Pede alterações</b><textarea class="in" id="ins" rows="4" style="margin-top:8px" placeholder="Ex.: muda as cores para azul-escuro, acrescenta uma secção de preços, põe o botão de WhatsApp maior"></textarea>
-   <button class="btn pri" id="edit" style="margin-top:10px;width:100%">Aplicar com IA ✦ (1 site)</button>${s.versions?.length ? '<button class="btn sm ghost" id="undo" style="margin-top:6px;width:100%">↶ Desfazer última alteração</button>' : ''}</div>
-   <div class="card pad"><b>Publicar grátis</b>
-    <div class="steps" style="margin-top:10px">
-     <div><span>${DB.gh?.token ? `GitHub ligado como <b>@${esc(DB.gh.login || '')}</b>` : '<button class="btn sm" id="gh">Ligar o meu GitHub</button>'}</span></div>
-     <div><span>Enviar para um repositório${s.repo ? `<br><a href="https://github.com/${esc(s.repo)}" target="_blank" rel="noopener" class="mu">github.com/${esc(s.repo)} ↗</a>` : ''}<br><button class="btn sm" id="push" style="margin-top:6px" ${DB.gh?.token ? '' : 'disabled'}>${s.repo ? 'Atualizar no GitHub' : 'Enviar para o GitHub'}</button></span></div>
-     <div><span>Publicar na Vercel (só na 1.ª vez)<br>${s.repo ? `<a class="btn sm pri" style="margin-top:6px" href="https://vercel.com/new/import?s=${encodeURIComponent('https://github.com/' + s.repo)}" target="_blank" rel="noopener">Publicar na Vercel ↗</a>` : '<span class="mu2">Primeiro envia para o GitHub.</span>'}</span></div>
-    </div><p class="note" style="margin-top:12px">Fica num endereço grátis tipo <b>nome.vercel.app</b>. Depois, cada "Atualizar no GitHub" publica sozinho.</p></div>
-   ${l ? `<a class="btn sm" href="#/lead/${l.id}">Ver o lead</a>` : ''}
-  </div>
-  <div class="frame"><div class="bar"><i style="background:#FF5C7A"></i><i style="background:#FFC53D"></i><i style="background:#2BD98A"></i><span style="margin-left:8px">${esc(slug(s.name))}.vercel.app</span><span style="margin-left:auto;display:flex;gap:6px"><button class="btn sm ghost" data-w="100%">🖥</button><button class="btn sm ghost" data-w="390px">📱</button></span></div>
-  <div style="flex:1;display:flex;justify-content:center;background:#E9E6EE"><iframe id="pv" sandbox="allow-scripts allow-popups" style="width:100%;height:100%"></iframe></div></div></div></div>`;
-  $('#pv').srcdoc = s.html;
-  $$('[data-w]').forEach(b => b.onclick = () => $('#pv').style.width = b.dataset.w);
-  $('#dl').onclick = () => download(slug(s.name) + '.html', s.html, 'text/html');
-  $('#open').onclick = () => { const w = window.open(); if (w) { w.document.write(s.html); w.document.close(); } };
-  $('#gh') && ($('#gh').onclick = connectGithub);
-  $('#push').onclick = () => pushGithub(s);
-  $('#undo') && ($('#undo').onclick = () => { s.html = s.versions.pop(); s.updatedAt = Date.now(); save(); viewSite(id); });
-  $('#edit').onclick = async () => {
-    const ins = $('#ins').value.trim(); if (!ins) return toast('Diz o que queres mudar.', true);
-    const b = $('#edit'); b.disabled = true; b.innerHTML = '<span class="spin"></span> A aplicar...';
-    try { const r = await api('site', l ? { lead: l, analysis: l.analysis, instructions: ins, currentHtml: s.html } : { instructions: ins, currentHtml: s.html }); s.versions = [...(s.versions || []), s.html].slice(-5); s.html = r.html; s.updatedAt = Date.now(); save(); refreshMe(); toast('Alteração aplicada ✓'); viewSite(id); }
-    catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'Aplicar com IA ✦ (1 site)'; }
+  const devs = [['100%', 'monitor', 'Computador'], ['820px', 'dash', 'Tablet'], ['390px', 'mobile', 'Telemóvel']];
+  $('#view').innerHTML = `<div class="lv">
+  <div class="lvtop">${mobBtn()}<a class="ib" href="#/sites" aria-label="Voltar">${ic('arrow')}</a><b class="lvname" id="snm" title="Clica para mudar o nome">${esc(s.name)}</b>${l ? `<a class="chip" href="#/lead/${l.id}">${ic('user', 14)} ${esc(l.name)}</a>` : ''}
+   <span class="sp"></span>
+   <div class="seg sm">${devs.map(([w, i, t]) => `<button data-w="${w}" title="${t}" class="${SITE_UI.dev === w ? 'on' : ''}">${ic(i, 16)}</button>`).join('')}</div>
+   <button class="btn sm" id="hist" ${s.versions?.length ? '' : 'disabled'}>${ic('clock', 15)} Histórico</button>
+   <button class="btn sm ${SITE_UI.code ? 'on' : ''}" id="code">&lt;/&gt; Código</button>
+   <button class="ib" id="full" title="Ecrã inteiro">${ic('arrow', 16)}</button>
+   <button class="btn sm pri" id="pub">${s.repo ? 'Atualizar' : 'Publicar'}</button></div>
+  <div class="lvbody"><aside class="lvchat"><div class="msgs" id="msgs"></div><div id="cmp"></div></aside>
+   <section class="lvprev">${SITE_UI.code ? `<div class="codev"><div class="codebar"><span>index.html · ${(s.html.length / 1024).toFixed(0)} KB</span><button class="btn sm" id="cpy">Copiar</button><button class="btn sm" id="dl">Descarregar</button></div><pre>${esc(s.html)}</pre></div>`
+     : s.html ? `<div class="pvwrap"><iframe id="pv" sandbox="allow-scripts allow-popups allow-forms" style="width:${SITE_UI.dev}"></iframe></div>` : `<div class="pvempty">${s.busy ? `<span class="spin"></span><p>A construir o teu site...</p>` : '<p>Ainda sem pré-visualização.</p>'}</div>`}</section></div></div>`;
+  drawChat(s);
+  const pv = $('#pv'); if (pv) pv.srcdoc = s.html;
+  const cmp = composer($('#cmp'), { placeholder: s.html ? 'Pede alterações... (podes anexar imagens e documentos)' : 'Descreve o site...', button: 'Enviar',
+    onSelect: s.html ? done => {
+      if (SITE_UI.code) { SITE_UI.code = false; viewSite(id); return toast('Clica em "Selecionar elemento" outra vez.'); }
+      const f = $('#pv'); f.srcdoc = s.html.replace(/<\/body>/i, SEL_JS + '</body>'); toast('Clica no elemento do site que queres editar.');
+      SITE_UI.selecting = e => { if (!e.data?.droplySel) return; removeEventListener('message', SITE_UI.selecting); SITE_UI.selecting = null; f.srcdoc = s.html; done({ html: e.data.droplySel, tag: e.data.tag, text: e.data.text }); };
+      addEventListener('message', SITE_UI.selecting);
+    } : null,
+    onSubmit: async ({ text, files, selection }) => { if (s.busy) { toast('Espera que a alteração anterior termine.', true); return false; } runSite(s, { text, files, selection, first: !s.html }); } });
+  $$('[data-w]').forEach(b => b.onclick = () => { SITE_UI.dev = b.dataset.w; $$('[data-w]').forEach(x => x.classList.toggle('on', x === b)); if ($('#pv')) $('#pv').style.width = b.dataset.w; });
+  $('#code').onclick = () => { SITE_UI.code = !SITE_UI.code; viewSite(id); };
+  $('#cpy') && ($('#cpy').onclick = () => copy(s.html));
+  $('#dl') && ($('#dl').onclick = () => download(slug(s.name) + '.html', s.html, 'text/html'));
+  $('#full').onclick = () => { const w = window.open(); if (w) { w.document.write(s.html); w.document.close(); } };
+  $('#snm').onclick = () => { const n = prompt('Nome do projeto', s.name); if (n && n.trim()) { s.name = n.trim(); save(); viewSite(id); } };
+  $('#hist').onclick = e => {
+    const vs = [...(s.versions || [])].map((v, i) => ({ ...(typeof v === 'string' ? { html: v, note: 'Versão anterior' } : v), i })).reverse();
+    const d = pop(e.currentTarget, `<div class="pgh">Versões anteriores</div>${vs.map(v => `<a href="javascript:void 0" class="pi" data-v="${v.i}">${ic('clock')}<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v.note || 'Versão')}</span><span class="pv">${v.at ? fmtDT(v.at) : ''}</span></a>`).join('')}`);
+    d.classList.add('wide');
+    $$('[data-v]', d).forEach(a => a.onclick = () => { const v = s.versions[+a.dataset.v]; const html = typeof v === 'string' ? v : v.html; if (!confirm('Restaurar esta versão? A versão atual fica guardada no histórico.')) return;
+      s.versions = [...s.versions, { html: s.html, at: s.updatedAt, note: s.lastNote || 'Antes do restauro' }].slice(-15); s.html = html; s.lastNote = 'Versão restaurada'; s.updatedAt = Date.now();
+      s.chat.push({ role: 'ai', text: 'Restaurei a versão: ' + ((typeof v === 'string' ? '' : v.note) || 'anterior') + '.', at: Date.now() }); save(); viewSite(id); });
   };
+  $('#pub').onclick = e => {
+    const vurl = s.repo ? `https://vercel.com/new/import?s=${encodeURIComponent('https://github.com/' + s.repo)}` : '';
+    const d = pop(e.currentTarget, `<div class="pgh">Publicar grátis</div>
+    <div class="pubs"><div class="pubst"><b>1. GitHub</b><small>${DB.gh?.token ? 'Ligado como @' + esc(DB.gh.login || '') : 'Liga a tua conta (grátis)'}</small>${DB.gh?.token ? `<button class="btn sm pri" id="ppush">${s.repo ? 'Atualizar no GitHub' : 'Enviar para o GitHub'}</button>` : '<button class="btn sm pri" id="pgh">Ligar GitHub</button>'}${s.repo ? `<a class="mu" target="_blank" rel="noopener" href="https://github.com/${esc(s.repo)}">github.com/${esc(s.repo)} ↗</a>` : ''}</div>
+    <div class="pubst"><b>2. Vercel</b><small>Só na 1.ª vez. Depois, cada atualização publica sozinha.</small>${vurl ? `<a class="btn sm" target="_blank" rel="noopener" href="${vurl}">Publicar na Vercel ↗</a>` : '<span class="mu2" style="font-size:12.5px">Primeiro envia para o GitHub.</span>'}</div>
+    <div class="psep"></div><a href="javascript:void 0" class="pi" id="pdl">${ic('note')}Descarregar HTML</a></div>`);
+    d.classList.add('wide'); d.onclick = ev => ev.stopPropagation();
+    $('#pgh', d) && ($('#pgh', d).onclick = () => { closePop(); connectGithub(() => viewSite(id)); });
+    $('#ppush', d) && ($('#ppush', d).onclick = () => pushGithub(s, $('#ppush', d)));
+    $('#pdl', d).onclick = () => { closePop(); download(slug(s.name) + '.html', s.html, 'text/html'); };
+  };
+  if (!s.html && !s.busy && s.brief) cmp.focus();
 }
 async function gh(path, opts = {}) {
   const r = await fetch('https://api.github.com' + path, { ...opts, headers: { Authorization: 'Bearer ' + DB.gh.token, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', ...(opts.headers || {}) } });
@@ -947,8 +1090,8 @@ async function gh(path, opts = {}) {
   return { status: r.status, data: j };
 }
 const b64 = str => btoa(unescape(encodeURIComponent(str)));
-async function pushGithub(s) {
-  const b = $('#push'); b.disabled = true; b.innerHTML = '<span class="spin"></span> A enviar...';
+async function pushGithub(s, b) {
+  b ||= $('#push') || document.createElement('button'); b.disabled = true; b.innerHTML = '<span class="spin"></span> A enviar...';
   try {
     if (!DB.gh.login) DB.gh.login = (await gh('/user')).data.login;
     let repo = s.repo;
@@ -960,7 +1103,7 @@ async function pushGithub(s) {
     }
     const cur = await gh(`/repos/${repo}/contents/index.html`);
     await gh(`/repos/${repo}/contents/index.html`, { method: 'PUT', body: JSON.stringify({ message: s.repo ? 'Atualização via droply' : 'Site criado com droply', content: b64(s.html), ...(cur.status === 200 ? { sha: cur.data.sha } : {}) }) });
-    s.repo = repo; s.pushedAt = Date.now(); save(); toast('Enviado para o GitHub ✓'); viewSite(s.id);
+    s.repo = repo; s.pushedAt = Date.now(); save(); closePop(); toast(s.pushedOnce ? 'Site atualizado no GitHub ✓' : 'Enviado para o GitHub ✓ Agora publica na Vercel.'); s.pushedOnce = true; viewSite(s.id);
   } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'Tentar outra vez'; }
 }
 
@@ -1163,7 +1306,7 @@ function viewSettings() {
   <div class="card pad" style="margin-top:14px"><div class="h" style="font-size:18px">O teu plano</div><p style="margin-top:6px">${ME.staff ? (ME.role === 'admin' ? 'Administrador' : 'Equipa') + ' · sem limites' : READONLY ? `Plano <b>${ME.lastPlan === 'pro' ? 'Pro' : 'Básico'}</b> · <span style="color:var(--red)">expirado</span>` : `Plano <b>${esc(ME.planInfo?.name || '')}</b>${ME.until ? ' · válido até ' + new Date(ME.until).toLocaleDateString('pt-PT') : ''}`}</p><div class="row-acts">${!ME.staff ? `<a class="btn sm pri" href="${esc(ME.renewUrl || CFG.checkout?.[ME.plan || ME.lastPlan || 'basico'] || '#/planos')}" target="_blank" rel="noopener">Renovar</a>` : ''}<a class="btn sm" href="#/planos">Ver planos</a>${ME.staff ? '<a class="btn sm" href="#/admin">Acessos de clientes</a>' : ''}</div></div>
   <div class="row-acts" style="margin-top:14px"><button class="btn" id="lo">Terminar sessão</button><a class="btn ghost" href="/" target="_blank">Página do droply</a><a class="btn ghost" href="/privacidade.html" target="_blank">Privacidade</a><a class="btn ghost" href="/termos.html" target="_blank">Termos</a></div></div>`;
   $('#pSave').onclick = () => { const tone = $('#pTone').value.trim(), ex = $('#pEx').value.trim(); Object.assign(DB.profile, { currency: $('#pCur').value, funnel: $('#pFun').value, name: $('#pName').value.trim(), company: $('#pCo').value.trim(), services: $('#pSv').value.trim(), toneRaw: tone, tone: tone + (ex ? '\nExemplo de mensagem do vendedor: ' + ex : ''), example: ex, signature: $('#pSig').value.trim() }); save(); toast('Guardado ✓'); };
-  $('#ghOn') && ($('#ghOn').onclick = connectGithub);
+  $('#ghOn') && ($('#ghOn').onclick = () => connectGithub(() => viewSettings()));
   $('#ghOff') && ($('#ghOff').onclick = () => { DB.gh = null; save(); viewSettings(); });
   $('#exp').onclick = () => download(`droply-copia-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ ...DB, gh: null }, null, 1), 'application/json');
   $('#imp').onchange = async e => { try { const d = JSON.parse(await e.target.files[0].text()); if (!d.leads) throw 0; DB = { ...DB, ...d, profile: { ...DB.profile, ...d.profile }, gh: DB.gh }; normalize(); save(); toast('Cópia importada ✓'); shell(); route(); } catch { toast('Ficheiro inválido.', true); } };

@@ -86,6 +86,17 @@
     return url;
   }
 
+  // ficheiros dos sites (imagens anexadas): ficam na pasta do utilizador, com link público
+  async function uploadAsset(blob, name) {
+    const id = await uid(); if (!id) throw new Error('Sem sessão.');
+    if (blob.size > 2 * 1024 * 1024) throw new Error('Imagem demasiado grande (máx. 2 MB).');
+    const ext = (blob.type.split('/')[1] || 'webp').replace('jpeg', 'jpg');
+    const safe = String(name || 'img').normalize('NFD').replace(/[^\w.-]+/g, '-').replace(/\.[a-z0-9]+$/i, '').slice(0, 40) || 'img';
+    const path = `${id}/sites/${Date.now()}-${safe}.${ext}`;
+    must(await sb.storage.from('avatars').upload(path, blob, { upsert: false, contentType: blob.type }));
+    return sb.storage.from('avatars').getPublicUrl(path).data.publicUrl;
+  }
+
   /* ---------- plano ---------- */
   async function plan() {
     const rows = must(await sb.rpc('my_plan')) || [];
@@ -257,6 +268,6 @@
   const cancelAccess = async email => { must(await sb.rpc('admin_cancel_access', { p_email: email })); return true; };
   const setRole = async (email, role) => { must(await sb.rpc('admin_set_role', { p_email: email, p_role: role })); return true; };
 
-  window.droplyDB = { sb, URL: SB_URL, handleAuthRedirect, signIn, resetPassword, signOut, session, token, profile, usernameAvailable, updateProfile, finishInvite, uploadAvatar,
+  window.droplyDB = { sb, URL: SB_URL, handleAuthRedirect, signIn, resetPassword, signOut, session, token, profile, usernameAvailable, updateProfile, finishInvite, uploadAvatar, uploadAsset,
     plan, plans, loadAll, saveAll, migrateLocal, listClients, createAccess, renewAccess, newLink, cancelAccess, setRole, onAuth: cb => sb.auth.onAuthStateChange(cb) };
 })();
