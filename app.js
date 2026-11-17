@@ -530,7 +530,7 @@ async function doSearch() {
   const b = $('#go'); b.disabled = true; b.innerHTML = '<span class="spin"></span>';
   try {
     const r = await api('search', { prompt });
-    const s = { id: uid(), label: r.plan.label || prompt.slice(0, 40), prompt, plan: r.plan, leadIds: [], next: r.nextPageToken, at: Date.now() };
+    const s = { id: uid(), label: r.plan.label || prompt.slice(0, 40), prompt, plan: r.plan, source: r.source, leadIds: [], next: r.nextPageToken, at: Date.now() };
     addLeads(r.leads, s);
     DB.searches.unshift(s); DB.searches = DB.searches.slice(0, 50); save();
     SEARCH = s; HTAB = 'res'; shell(); route(); setTimeout(() => $('.lower')?.scrollIntoView({ behavior: 'smooth' }), 80);
@@ -565,12 +565,12 @@ function leadCard(l) {
   return `<div class="pcard2 lead" data-lead="${l.id}"><div class="thumb" style="--c:${c}"><span class="big">${esc((l.name[0] || '?').toUpperCase())}</span>
    ${sc != null ? `<span class="score">${sc}</span>` : ''}<span class="badge">${!l.website && l.source !== 'manual' ? 'Sem site' : esc(st[1])}</span>
    <div class="hov">${l.analysis ? '<button class="btn sm pri" data-open>Ver mensagens</button>' : `<button class="btn sm pri" data-an="${l.id}">${BUSY[l.id] ? '<span class="spin"></span>' : ic('sparkle', 15) + ' Analisar'}</button>`}</div></div>
-   <div class="meta"><span class="mav" style="background:${c}">${esc((l.name[0] || '?').toUpperCase())}</span><div style="min-width:0"><b>${esc(l.name)}</b><small>${l.rating ? l.rating + '★ · ' : ''}${l.reviews ?? 0} avaliações${l.category ? ' · ' + esc(l.category) : ''}</small></div></div>
+   <div class="meta"><span class="mav" style="background:${c}">${esc((l.name[0] || '?').toUpperCase())}</span><div style="min-width:0"><b>${esc(l.name)}</b><small>${l.source === 'osm' ? esc([l.category, (l.address || '').split(',').slice(-2, -1)[0]].filter(Boolean).join(' · ')) || 'OpenStreetMap' : `${l.rating ? l.rating + '★ · ' : ''}${l.reviews ?? 0} avaliações${l.category ? ' · ' + esc(l.category) : ''}`}</small></div></div>
    <div class="tags">${leadTags(l).replace('<span class="tag p">SEM SITE</span>', '')}${tempTag(l.temp)}</div></div>`;
 }
 function resultsHTML() {
   const s = SEARCH; const leads = s.leadIds.map(id => DB.leads[id]).filter(Boolean);
-  return `<div class="rhd"><div><b>${esc(s.label)}</b><small>${leads.length} empresas · já estão nos teus Clientes</small></div><span class="sp"></span>
+  return `<div class="rhd"><div><b>${esc(s.label)}</b><small>${leads.length} empresas · já estão nos teus Clientes${s.source === 'osm' ? ' · Fonte: OpenStreetMap (sem avaliações do Google)' : ''}</small></div><span class="sp"></span>
   <button class="btn sm" id="anAll">${ic('sparkle', 15)} Analisar as 5 melhores</button></div>
   <div class="pgrid">${leads.map(leadCard).join('') || '<div class="empty">Nenhum resultado com estes filtros.</div>'}</div>
   ${s.next ? '<div style="text-align:center;margin-top:18px"><button class="btn" id="more">Carregar mais (1 pesquisa)</button></div>' : ''}`;
