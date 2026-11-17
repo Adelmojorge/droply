@@ -79,16 +79,19 @@ async function searchOSM(plan, offset) {
   if (!words.length) throw httpError(400, 'Diz o tipo de negócio que procuras (ex.: dentistas, restaurantes).');
   const found = new Map();
   // 1) Nominatim: "dentist in Lisbon, Portugal" (rápido e estável). Até 2 páginas de 40 por palavra.
+  const T = { start: Date.now() };
   for (const w of words) {
     let exclude = [];
     for (let round = 0; round < 2; round++) {
+      if (round && found.size >= 30) break;
       const res = await nominatim({ q: `${w} in ${o.area}`, limit: '40', ...(exclude.length ? { exclude_place_ids: exclude.join(',') } : {}) });
       for (const x of res) { const p = fromNominatim(x, o.area); if (p.name && !found.has(p.key)) found.set(p.key, p); }
       exclude.push(...res.map(x => x.place_id));
-      await sleep(1100); // regra do Nominatim: 1 pedido por segundo
       if (res.length < 40) break;
+      await sleep(1000); // regra do Nominatim: 1 pedido por segundo
     }
   }
+  T.nominatim = Date.now() - T.start;
   // 2) Reserva: Overpass na zona da cidade, se o Nominatim trouxe pouco
   if (found.size < 10 && tags.length) {
     const [g] = await nominatim({ q: o.area, limit: '1', extratags: '0' });
@@ -105,7 +108,8 @@ async function searchOSM(plan, offset) {
     .filter(l => { const k = l.name.toLowerCase() + '|' + l.address.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
     .filter(l => (f.website !== 'none' || !l.website) && (f.website !== 'has' || !!l.website))
     .sort((a, b) => (!!b.phone - !!a.phone) || (!!b.email - !!a.email));
-  return { leads: all.slice(offset, offset + PAGE), found: all.length, nextPageToken: offset + PAGE < all.length ? 'osm:' + (offset + PAGE) : null };
+  T.total = Date.now() - T.start;
+  return { leads: all.slice(offset, offset + PAGE), found: all.length, nextPageToken: offset + PAGE < all.length ? 'osm:' + (offset + PAGE) : null, timing: T };
 }
 
 async function searchGoogle(plan, key, pageToken) {
@@ -142,7 +146,9 @@ export default handler(async (req, res) => {
     const prompt = String(b.prompt || '').trim().slice(0, 400);
     if (prompt.length < 4) throw httpError(400, 'Escreve que clientes procuras.');
     await consume(user, 'search');
+    const t0 = Date.now();
     plan = await ai({ system: SYS, user: prompt, maxTokens: 500, temperature: 0 });
+    plan._aiMs = Date.now() - t0;
     if (!plan.textQuery && !plan.osm) throw httpError(400, 'Não percebi o pedido. Diz o tipo de empresa e a cidade.');
   } else {
     if (!b.pageToken) throw httpError(400, 'Nada para carregar.');
